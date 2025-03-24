@@ -1,0 +1,12 @@
+1. Block element = takes up the entire line 
+2. inline-block element = only takes up as much space as needed.
+3. inline element = appear within a line of text
+
+
+
+div = division (just a box) <div></div> = containers
+
+Nested layouts technique (嵌套布局技术)
+
+1. Vertical layout
+2. Horizontal Layout

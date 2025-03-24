@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>YouToBe website clone</title>
+        <link rel="stylesheet" href="styles/text.css">
+    </head>
+    <body>
+        <div class="arc-container">
+            <div class="arc" id="colorArc"></div>
+        </div>
+        <div class="slider-container">
+            <input type="range" min="0" max="100" value="50" id="colorSlider">
+        </div>
+    
+        <script>
+            const slider = document.getElementById('colorSlider');
+            const arc = document.getElementById('colorArc');
+    
+            slider.addEventListener('input', function() {
+                const value = slider.value; // 0-100
+                // 根据滑动条位置计算颜色
+                const blue = Math.round((100 - value) / 100 * 255); // 左边蓝，右边减弱
+                const red = Math.round(value / 100 * 255);   // 右边红，左边减弱
+                arc.style.background = `linear-gradient(to right, rgb(0, 0, ${blue}), rgb(${red}, 0, 0))`;
+            });
+        </script>
+    </body>
+</html>

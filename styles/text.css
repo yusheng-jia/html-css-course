@@ -1,0 +1,40 @@
+p {
+    color: rgb(201, 5, 5);
+}
+
+.arc-container {
+    width: 200px;
+    height: 200px;
+    position: relative;
+    overflow: hidden;
+}
+
+.arc {
+    width: 190px;
+    height: 190px;
+    position: absolute;
+    top: 0;
+    left: 0;
+    border: 5px solid transparent;
+    border-radius: 50%;
+    background: linear-gradient(to right, #0000ff, #ff0000);
+    mask: 
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    -webkit-mask: 
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    padding: 5px;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 25%, 0% 25%);
+}
+
+.slider-container {
+    width: 200px;
+    margin-top: 20px;
+}
+
+input[type="range"] {
+    width: 100%;
+}

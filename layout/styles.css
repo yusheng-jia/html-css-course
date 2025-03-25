@@ -1,0 +1,29 @@
+/* styles.css */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    width: 300px;
+    height: 200px;
+    position: relative;
+    display: flex;
+    background-color: yellow;
+}
+
+.rect {
+    width: 300px;
+    height: 200px;
+    background-color: #ccc;
+    position: relative;
+}
+
+label {
+    position: absolute;
+    font-size: 24px;
+    left: 50%;       /* 水平居中 */
+    top: 10px;       /* 距离顶部10像素，可根据需要调整 */
+    transform: translateX(-50%); /* 仅在X轴偏移，确保水平居中 */
+}

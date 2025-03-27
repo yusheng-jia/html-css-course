@@ -33,3 +33,38 @@ Page({
         });
     }
   });
+
+
+
+  addContext(canvasId, zIndex) {
+    const ctx = wx.createCanvasContext(canvasId);
+    // const ctx = canvas.getContext('2d')
+    this.contexts.push({ id: canvasId, ctx, zIndex });
+
+    // const query = wx.createSelectorQuery();
+    // console.log(canvasId)
+    // query.select(`#${canvasId}`)
+    //     .fields({ node: true, size: true })
+    //     .exec((res) => {
+    //       const canvas = res[0].node;
+    //       const ctx = canvas.getContext('2d');
+          
+    //       canvas.width = res[0].width;
+    //       canvas.height = res[0].height;
+    //       // const dpr = wx.getSystemInfoSync().pixelRatio;
+    //       // console.log(dpr);
+    //       // canvas.width = res[0].width * dpr;
+    //       // canvas.height = res[0].height * dpr;
+    //       // ctx.scale(dpr, dpr); // 适配高分辨率屏幕
+
+    //       this.arcX = canvas.width / 2;
+    //       this.arcY = this.isArc ? this.arcX + 4 * this.unit : this.arcX;
+    //       if(this.isArc){
+    //         this.arcRadius = this.arcX + 1.5 * this.unit;
+    //         canvas.height = 2 * this.unit + (1 - Math.cos(52 * Math.PI / 180)) * this.arcRadius;
+    //       }
+
+    //       console.log(canvas.width, canvas.height, this.arcX, this.arcY, this.arcRadius)
+    //       this.contexts.push({ id: canvasId, ctx, zIndex });
+    //     });
+  }

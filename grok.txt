@@ -1,0 +1,3408 @@
+
+
+
+宇贾
+/**
+ * Created by Angela on 2018/6/29.
+ */
+
+angular.module('productModule')
+  .factory('arcService', ['$timeout', function ($timeout) {
+    var drawArcService = {
+      setStopFunc: setStopFunc,
+      animateCanvas: animateCanvas,
+      drawBaseArc: drawBaseArc,
+      drawArcByPercent: drawArcByPercent,
+      drawGearArc: drawGearArc,
+      drawArcByType: drawArcByType,
+      drawCircleWave: drawCircleWave,
+      stopDrawCircleWave: stopDrawCircleWave,
+    };
+    return drawArcService;
+
+    var stopFunc = null;
+
+
+    var waveCanvas = null;
+
+
+    // set stop function to excute when touch end
+    function setStopFunc(yourFunc) {
+      if (typeof yourFunc == 'function') {
+        stopFunc = yourFunc;
+      }
+    }
+
+    // set stop function to excute when touch end
+    function stopDrawCircleWave() {
+      if (waveCanvas) waveCanvas = undefined;
+    }
+
+
+    /**
+     * animate canvas, slide to set gear
+     * @param slideItem the slide canvas data
+     */
+    function animateCanvas(slideItem, delayTime, scope) {
+      // need three canvas to draw the gear arc 画布数量需要大于等于3才能移动
+      if (slideItem.canvas.length >= 3 && slideItem.canvasObj) {
+        // get canvas obj according to canvas's id 根据ID获取画布对象
+        var canvas = $("#" + slideItem.canvas[slideItem.canvas.length - 1]);
+        // get drawArc obj 获取绘制圆弧的对象
+        var drawArc = slideItem.canvasObj;
+
+        // init varible 初始化变量值
+        var startTouchX = 0;// the x coordinate when start touch 开始滑动时的X坐标
+        var endTouchX = 0;// the x coordinate when end touch结束滑动时的X坐标
+        var gearChange = false;//whether gear has changed挡位是否变化
+
+        var timePromise = undefined; // timer for delay to send command 计时器对象
+        var needDelay = false;// whether need to set delay 是否需要设置延时
+        if (slideItem.gearArray.length >= 8) {
+          needDelay = true;// if gear length more than 8, set timer to delay sending command
+        }
+
+        var drawFunc = function () {
+          var diffX = endTouchX - startTouchX;// the distance of x slide 滑动距离
+          // console.log('diffX:' + diffX);
+          var diffAngle = diffX / drawArc.canvasWidth * Math.PI;// the slide arc 滑动弧度
+          var diffGear = Math.round(diffAngle / (drawArc.angleInterval * 2));// the slide gear 滑动的挡位间隔
+          var curGearIndex = slideItem.gearIndex - diffGear;// current gear index
+          // console.log('curGearIndex:' + curGearIndex);
+          // console.log('drawFunc圆弧滚动------controlCurrent-', scope.controlCurrent)
+          if (curGearIndex >= 0 && curGearIndex < drawArc.textArray.length) {
+            $timeout(function () {
+              if (slideItem.gearIndex !== curGearIndex) {
+                // redraw the arc and set the gear data
+                startTouchX = endTouchX;
+                slideItem.gearIndex = curGearIndex;
+                slideItem.gearValue = drawArc.textArray[curGearIndex];
+                gearChange = true;
+                if (slideItem.type === 'gear') {
+                  drawArc.drawGearArc(0, slideItem.gearIndex);
+                } else if (slideItem.type === 'karing-gage') {
+                  drawArc.drawGearArc(0, slideItem.gearIndex, null, 'karing-gage');
+                } else if (slideItem.type === 'half') {
+                  drawArc.drawGearArc(0, slideItem.gearIndex, true);
+                } else if (slideItem.type === 'karing-tempe') {
+                  drawArc.drawGearArc(0, slideItem.gearIndex, true, 'karing-tempe');
+                } else if (slideItem.type === 'presetGear') {
+                  drawArc.drawPresetGearArc(0, slideItem.gearIndex);
+                } else if (slideItem.type === 'presetHalf') {
+                  drawArc.drawPresetGearArc(0, slideItem.gearIndex, true);
+                } else if (slideItem.type === 'textGear') {
+                  drawArc.drawStringGearArc(0, slideItem.gearIndex);
+                } else if (slideItem.type === 'presetFour') {
+                  drawArc.drawPresetFourArc(0, slideItem.gearIndex);
+                }
+                if (slideItem.isContinueSend) {
+                  if ((typeof stopFunc == 'function') && gearChange) {
+                    stopFunc(slideItem);
+                    gearChange = false;
+                  }
+                }
+              }
+            });
+          }
+        };
+
+        var touchstart = function (e) {
+          //preventDefault() 方法阻止元素发生默认的行为（例如，当点击提交按钮时阻止对表单的提交）。
+          e.preventDefault();
+          // 阻止事件冒泡
+          e.stopPropagation();
+          // get the coordinate position of touch event 获取事件event的坐标位置
+          startTouchX = e.originalEvent.targetTouches[0].pageX;
+        };
+
+        var touchmove = function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          endTouchX = e.originalEvent.targetTouches[0].pageX;
+
+          drawFunc();
+        };
+
+        var touchend = function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          // console.log('touch end' + ' ' + (new Date()));
+          // console.log('gearChange:' + gearChange);
+          if ((typeof stopFunc == 'function') && gearChange) {
+            if (needDelay) {
+              if (timePromise) $timeout.cancel(timePromise);
+              // delay to send command 设置延时发送指令
+              timePromise = $timeout(function () {
+                // console.log('delay' + ' ' + (new Date()));
+                stopFunc(slideItem);
+              }, delayTime !== undefined ? delayTime : 500);
+              // the delay time,unit is ms 延时时间，单位毫秒
+            } else {
+              stopFunc(slideItem);
+            }
+            gearChange = false;
+          }
+        };
+
+        // remove the listener 移除已存在的监听
+        // 触摸开始
+        canvas.unbind('touchstart');
+
+        // 触摸移动中
+        canvas.unbind('touchmove');
+
+        // 触摸结束
+        canvas.unbind('touchend');
+
+        // add listener
+        //element.addEventListener(event, function, useCapture)
+        //event:事件名;function:事件触发时执行的函数;
+        // useCapture:指定事件是否在捕获或冒泡阶段执行。
+        // true - 事件句柄在捕获阶段执行
+        // false- 默认。事件句柄在冒泡阶段执行
+        // 触摸开始
+        canvas.bind('touchstart', touchstart);
+
+        // 触摸移动中
+        canvas.bind('touchmove', touchmove);
+
+        // 触摸结束
+        canvas.bind('touchend', touchend);
+      }
+    }
+
+    //draw grey or blue radian
+    function drawBaseArc(slideItem) {
+      var canvasObj = null;
+      if (!slideItem.canvasObj) {
+        canvasObj = new drawArc(slideItem.slideName);
+        var canvasList = slideItem.canvas;
+        for (var i = 0; i < canvasList.length; i++) {
+          canvasObj.addContext(canvasList[i], i + 1);
+        }
+        slideItem.canvasObj = canvasObj;
+      }
+      canvasObj = slideItem.canvasObj;
+      if (slideItem.isOpen) {
+        canvasObj.drawFillArc(0, 'blue');
+      } else {
+        canvasObj.drawFillArc(0, 'grey');
+      }
+    }
+
+    //draw arc according to percent
+    function drawArcByPercent(slideItem) {
+      var canvasObj = null;
+      if (!slideItem.canvasObj) {
+        canvasObj = new drawArc(slideItem.slideName);
+        var canvasList = slideItem.canvas;
+        for (var i = 0; i < canvasList.length; i++) {
+          canvasObj.addContext(canvasList[i], i + 1);
+        }
+        slideItem.canvasObj = canvasObj;
+        canvasObj.drawFillArc(0, 'grey');
+      }
+      canvasObj = slideItem.canvasObj;
+      canvasObj.drawPercentArc(1, slideItem.colorType, slideItem.percent);
+    }
+
+    //draw arc with gear 用齿轮画弧
+    function drawGearArc(slideItem, isHalf, typeCode) {
+      var canvasObj = null;
+      if (!slideItem.canvasObj) {
+        canvasObj = new drawArc(slideItem.slideName, true);
+        var canvasList = slideItem.canvas;
+        for (var i = 0; i < canvasList.length; i++) {
+          canvasObj.addContext(canvasList[i], i + 1);
+        }
+        canvasObj.setTextArray(slideItem.gearArray, slideItem.gearArrayDescribe);
+        slideItem.canvasObj = canvasObj;
+      }
+      canvasObj = slideItem.canvasObj;
+      canvasObj.drawGearArc(0, slideItem.gearIndex, isHalf, typeCode);
+    }
+
+    //draw blue arc
+    function drawBlueArc(slideItem) {
+      var canvasObj = null;
+      if (!slideItem.canvasObj) {
+        canvasObj = new drawArc(slideItem.slideName, true);
+        var canvasList = slideItem.canvas;
+        for (var i = 0; i < canvasList.length; i++) {
+          canvasObj.addContext(canvasList[i], i + 1);
+        }
+        slideItem.canvasObj = canvasObj;
+      }
+      canvasObj = slideItem.canvasObj;
+      canvasObj.drawBlueGearArc(0);
+    }
+
+    //draw arc with gear
+    function drawPresetGearArc(slideItem, isHalf) {
+      var canvasObj = null;
+      if (!slideItem.canvasObj) {
+        canvasObj = new drawArc(slideItem.slideName, true);
+        var canvasList = slideItem.canvas;
+        for (var i = 0; i < canvasList.length; i++) {
+          canvasObj.addContext(canvasList[i], i + 1);
+        }
+        canvasObj.setTextArray(slideItem.gearArray, slideItem.gearArrayDescribe);
+        slideItem.canvasObj = canvasObj;
+      }
+      canvasObj = slideItem.canvasObj;
+      canvasObj.drawPresetGearArc(0, slideItem.gearIndex, isHalf);
+    }
+
+    //draw arc with gear
+    function drawPresetFourArc(slideItem) {
+      var canvasObj = null;
+      if (!slideItem.canvasObj) {
+        canvasObj = new drawArc(slideItem.slideName, true);
+        var canvasList = slideItem.canvas;
+        for (var i = 0; i < canvasList.length; i++) {
+          canvasObj.addContext(canvasList[i], i + 1);
+        }
+        canvasObj.setTextArray(slideItem.gearArray, slideItem.gearArrayDescribe);
+        slideItem.canvasObj = canvasObj;
+      }
+      canvasObj = slideItem.canvasObj;
+      canvasObj.drawPresetFourArc(0, slideItem.gearIndex);
+    }
+
+    //draw arc with gear
+    function drawTextGearArc(slideItem) {
+      var canvasObj = null;
+      if (!slideItem.canvasObj) {
+        canvasObj = new drawArc(slideItem.slideName, true);
+        var canvasList = slideItem.canvas;
+        for (var i = 0; i < canvasList.length; i++) {
+          canvasObj.addContext(canvasList[i], i + 1);
+        }
+        canvasObj.setTextArray(slideItem.gearArray, slideItem.gearArrayDescribe);
+        slideItem.canvasObj = canvasObj;
+      }
+      canvasObj = slideItem.canvasObj;
+      canvasObj.drawStringGearArc(0, slideItem.gearIndex);
+    }
+
+    function drawArcByType(slideItem) {
+      if (slideItem) {
+        // clear canvas obj 置空画布对象
+        var len = globalDrawArcCanvas.length;
+        if (len) {
+          for (var i = len - 1; i >= 0; i--) {
+            if (globalDrawArcCanvas[i]) {
+              globalDrawArcCanvas[i].height = 0;
+              globalDrawArcCanvas[i].width = 0;
+              globalDrawArcCanvas[i] = null;
+              globalDrawArcCanvas.splice(i, 1);
+            }
+          }
+        }
+        slideItem.canvasObj = null;
+        if (slideItem.type == 'arc') {
+          drawBaseArc(slideItem);
+        } else if (slideItem.type === 'percent') {
+          drawArcByPercent(slideItem);
+        } else if (slideItem.type === 'gear') {
+          drawGearArc(slideItem);
+        } else if (slideItem.type === 'half') {
+          drawGearArc(slideItem, true);
+        } else if (slideItem.type === 'presetGear') {
+          drawPresetGearArc(slideItem);
+        } else if (slideItem.type === 'presetHalf') {
+          drawPresetGearArc(slideItem, true);
+        } else if (slideItem.type === 'textGear') {
+          drawTextGearArc(slideItem);
+        } else if (slideItem.type === 'blueArc') {
+          drawBlueArc(slideItem);
+        } else if (slideItem.type === 'presetFour') {
+          drawPresetFourArc(slideItem);
+        } else if (slideItem.type === 'karing-tempe') {
+          drawGearArc(slideItem, true, 'karing-tempe');
+        } else if (slideItem.type === 'karing-gage') {
+          drawGearArc(slideItem, null, 'karing-gage');
+        }
+      }
+    }
+
+    //draw circle wave
+    function drawCircleWave(slideItem, unit) {
+      waveCanvas = document.getElementById(slideItem.canvas[0]);
+      var ctx = waveCanvas.getContext('2d');
+      //画布属性
+      var width = waveCanvas.offsetWidth;
+      //  计算画布的高度
+      var height = waveCanvas.offsetHeight;
+      var mW = waveCanvas.width = width;
+      var mH = waveCanvas.height = height;
+      if (window.devicePixelRatio) {
+        waveCanvas.style.width = mW;
+        waveCanvas.style.height = mH;
+        waveCanvas.width = mW * window.devicePixelRatio;
+        waveCanvas.height = mH * window.devicePixelRatio;
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      }
+      var lineWidth = 0.12 * unit;
+
+      //圆属性
+      var r = mH / 2; //圆心
+      var cR = r - 6 * lineWidth; //圆半径
+
+      //Sin 曲线属性
+      var sX = 0;
+      var axisLength = mW; //轴长
+      var waveWidth = 0.01; //波浪宽度,数越小越宽
+      var waveHeight = 0.2 * unit; //波浪高度,数越大越高
+      var speed = 0.08; //波浪速度，数越大速度越快
+      var xOffset = 0; //波浪x偏移量
+
+      ctx.lineWidth = lineWidth;
+
+      //画圈函数
+      var drawCircle = function () {
+        ctx.beginPath();
+        ctx.fillStyle = '#0A1A1A';
+        ctx.arc(r, r, r, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.fillStyle = '#51D0D2';
+        ctx.arc(r, r, cR + 4.2 * lineWidth, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.fillStyle = '#000';
+        ctx.arc(r, r, cR + 3.8 * lineWidth, 0, 2 * Math.PI);
+        ctx.fill();
+        // ctx.beginPath();
+        // ctx.strokeStyle = '#51D0D2';
+        // ctx.arc(r, r, cR + lineWidth, 0, 2 * Math.PI);
+        // ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(r, r, cR + 3.8 * lineWidth, 0, 2 * Math.PI);
+        ctx.clip();
+      };
+
+      //画sin 曲线函数
+      var drawSin = function (xOffset) {
+        ctx.save();
+        var points = []; //用于存放绘制Sin曲线的点
+        ctx.beginPath();
+        //在整个轴长上取点
+        for (var x = sX; x < sX + axisLength; x += 0.48 * unit / axisLength) {
+          //此处坐标(x,y)的取点，依靠公式 “振幅高*sin(x*振幅宽 + 振幅偏移量)”
+          var y1 = -Math.sin((sX + x) * waveWidth + xOffset);
+          var dY = mH * (1 - slideItem.nowRange / 100);
+          points.push([x, dY + y1 * waveHeight]);
+          ctx.lineTo(x, dY + y1 * waveHeight);
+        }
+        //封闭路径
+        ctx.lineTo(axisLength, mH);
+        ctx.lineTo(sX, mH);
+        ctx.lineTo(points[0][0], points[0][1]);
+        ctx.fillStyle = '#38A6B4';
+        ctx.fill();
+        ctx.beginPath();
+        //在整个轴长上取点
+        for (var x = sX; x < sX + axisLength; x += 0.48 * unit / axisLength) {
+          //此处坐标(x,y)的取点，依靠公式 “振幅高*sin(x*振幅宽 + 振幅偏移量)”
+          var y2 = -Math.sin((sX + x) * waveWidth + xOffset + 9.6 * unit);
+          var dY = mH * (1 - slideItem.nowRange / 100);
+          points.push([x, dY + y2 * waveHeight]);
+          ctx.lineTo(x, dY + y2 * waveHeight);
+        }
+        //封闭路径
+        ctx.lineTo(axisLength, mH);
+        ctx.lineTo(sX, mH);
+        ctx.lineTo(points[0][0], points[0][1]);
+        ctx.fillStyle = '#76DEEE';
+        ctx.fill();
+        ctx.restore();
+      };
+      //写百分比文本函数
+      var drawText = function () {
+        ctx.save();
+        var size = 0.12 * cR;
+        ctx.font = size + 'px HelveticaNeueLTPro-Roman';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+        ctx.fillText(slideItem.text, r, 0.62 * r + size / 2);
+        ctx.restore();
+        if (slideItem.nowRange === 0) {
+          ctx.save();
+          var size = 0.24 * cR;
+          ctx.font = size + 'px HelveticaNeueLTPro-Roman';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = "rgba(255, 255, 255, 1)";
+          ctx.fillText(slideItem.done + '!', r, r + size / 2);
+          ctx.restore();
+        }
+      };
+
+      drawCircle();
+
+      var render = function () {
+        ctx.clearRect(0, 0, mW, mH);
+        if (slideItem.text) {
+          drawText();
+        }
+        drawSin(xOffset);
+        xOffset += speed;
+        if (document.getElementById(slideItem.canvas[0])) requestAnimationFrame(render);
+      };
+      requestAnimationFrame(render);
+    }
+
+  }]);
+ 这是angularjs里的一个方法文件，帮我转出微信小程序里的工具列文件，我微信小程序开发使用
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+不是，转出微信小程序的代码
+
+
+
+
+我来帮你将这个 AngularJS 服务转换为微信小程序的工具函数文件。微信小程序使用 JavaScript，但有其特定的 API 和结构。我们需要：
+
+移除 Angular 相关依赖（如 $timeout）
+使用小程序的 canvas API
+调整事件绑定方式为小程序的触摸事件
+导出为模块化的工具函数
+以下是转换后的微信小程序工具文件（utils/arcUtil.js）：
+
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+// utils/arcUtil.js
+const arcUtil = {
+  setStopFunc: setStopFunc,
+  animateCanvas: animateCanvas,
+  drawBaseArc: drawBaseArc,
+  drawArcByPercent: drawArcByPercent,
+  drawGearArc: drawGearArc,
+  drawArcByType: drawArcByType,
+  drawCircleWave: drawCircleWave,
+  stopDrawCircleWave: stopDrawCircleWave,
+}
+
+let stopFunc = null
+let waveCanvas = null
+
+function setStopFunc(yourFunc) {
+  if (typeof yourFunc === 'function') {
+    stopFunc = yourFunc
+  }
+}
+
+function stopDrawCircleWave() {
+  if (waveCanvas) waveCanvas = undefined
+}
+
+function animateCanvas(slideItem, delayTime = 500) {
+  if (slideItem.canvas.length >= 3 && slideItem.canvasObj) {
+    let startTouchX = 0
+    let endTouchX = 0
+    let gearChange = false
+    let timePromise = null
+    const needDelay = slideItem.gearArray.length >= 8
+
+    const drawFunc = () => {
+      const diffX = endTouchX - startTouchX
+      const diffAngle = diffX / slideItem.canvasObj.canvasWidth * Math.PI
+      const diffGear = Math.round(diffAngle / (slideItem.canvasObj.angleInterval * 2))
+      const curGearIndex = slideItem.gearIndex - diffGear
+
+      if (curGearIndex >= 0 && curGearIndex < slideItem.canvasObj.textArray.length) {
+        setTimeout(() => {
+          if (slideItem.gearIndex !== curGearIndex) {
+            startTouchX = endTouchX
+            slideItem.gearIndex = curGearIndex
+            slideItem.gearValue = slideItem.canvasObj.textArray[curGearIndex]
+            gearChange = true
+            
+            const typeMap = {
+              'gear': () => slideItem.canvasObj.drawGearArc(0, slideItem.gearIndex),
+              'karing-gage': () => slideItem.canvasObj.drawGearArc(0, slideItem.gearIndex, null, 'karing-gage'),
+              'half': () => slideItem.canvasObj.drawGearArc(0, slideItem.gearIndex, true),
+              'karing-tempe': () => slideItem.canvasObj.drawGearArc(0, slideItem.gearIndex, true, 'karing-tempe'),
+              'presetGear': () => slideItem.canvasObj.drawPresetGearArc(0, slideItem.gearIndex),
+              'presetHalf': () => slideItem.canvasObj.drawPresetGearArc(0, slideItem.gearIndex, true),
+              'textGear': () => slideItem.canvasObj.drawStringGearArc(0, slideItem.gearIndex),
+              'presetFour': () => slideItem.canvasObj.drawPresetFourArc(0, slideItem.gearIndex)
+            }
+            typeMap[slideItem.type]?.()
+
+            if (slideItem.isContinueSend && typeof stopFunc === 'function' && gearChange) {
+              stopFunc(slideItem)
+              gearChange = false
+            }
+          }
+        }, 0)
+      }
+    }
+
+    // 在小程序页面中使用时需要绑定这些事件
+    return {
+      touchstart: (e) => {
+        startTouchX = e.touches[0].pageX
+      },
+      touchmove: (e) => {
+        endTouchX = e.touches[0].pageX
+        drawFunc()
+      },
+      touchend: () => {
+        if (typeof stopFunc === 'function' && gearChange) {
+          if (needDelay) {
+            if (timePromise) clearTimeout(timePromise)
+            timePromise = setTimeout(() => {
+              stopFunc(slideItem)
+            }, delayTime)
+          } else {
+            stopFunc(slideItem)
+          }
+          gearChange = false
+        }
+      }
+    }
+  }
+}
+
+function drawBaseArc(slideItem) {
+  let canvasObj = slideItem.canvasObj
+  if (!canvasObj) {
+    canvasObj = new DrawArc(slideItem.slideName)
+    slideItem.canvas.forEach((canvasId, index) => {
+      canvasObj.addContext(canvasId, index + 1)
+    })
+    slideItem.canvasObj = canvasObj
+  }
+  canvasObj.drawFillArc(0, slideItem.isOpen ? 'blue' : 'grey')
+}
+
+function drawArcByPercent(slideItem) {
+  let canvasObj = slideItem.canvasObj
+  if (!canvasObj) {
+    canvasObj = new DrawArc(slideItem.slideName)
+    slideItem.canvas.forEach((canvasId, index) => {
+      canvasObj.addContext(canvasId, index + 1)
+    })
+    slideItem.canvasObj = canvasObj
+    canvasObj.drawFillArc(0, 'grey')
+  }
+  canvasObj.drawPercentArc(1, slideItem.colorType, slideItem.percent)
+}
+
+function drawGearArc(slideItem, isHalf, typeCode) {
+  let canvasObj = slideItem.canvasObj
+  if (!canvasObj) {
+    canvasObj = new DrawArc(slideItem.slideName, true)
+    slideItem.canvas.forEach((canvasId, index) => {
+      canvasObj.addContext(canvasId, index + 1)
+    })
+    canvasObj.setTextArray(slideItem.gearArray, slideItem.gearArrayDescribe)
+    slideItem.canvasObj = canvasObj
+  }
+  canvasObj.drawGearArc(0, slideItem.gearIndex, isHalf, typeCode)
+}
+
+function drawArcByType(slideItem) {
+  if (!slideItem) return
+  
+  slideItem.canvasObj = null
+  const typeMap = {
+    'arc': () => drawBaseArc(slideItem),
+    'percent': () => drawArcByPercent(slideItem),
+    'gear': () => drawGearArc(slideItem),
+    'half': () => drawGearArc(slideItem, true),
+    'presetGear': () => drawPresetGearArc(slideItem),
+    'presetHalf': () => drawPresetGearArc(slideItem, true),
+    'textGear': () => drawTextGearArc(slideItem),
+    'blueArc': () => drawBlueArc(slideItem),
+    'presetFour': () => drawPresetFourArc(slideItem),
+    'karing-tempe': () => drawGearArc(slideItem, true, 'karing-tempe'),
+    'karing-gage': () => drawGearArc(slideItem, null, 'karing-gage')
+  }
+  typeMap[slideItem.type]?.()
+}
+
+function drawCircleWave(slideItem, unit) {
+  waveCanvas = wx.createCanvasContext(slideItem.canvas[0])
+  const query = wx.createSelectorQuery()
+  query.select(`#${slideItem.canvas[0]}`)
+    .fields({ size: true })
+    .exec((res) => {
+      const width = res[0].width
+      const height = res[0].height
+      const lineWidth = 0.12 * unit
+      const r = height / 2
+      const cR = r - 6 * lineWidth
+      
+      let xOffset = 0
+      const waveWidth = 0.01
+      const waveHeight = 0.2 * unit
+      const speed = 0.08
+
+      const drawCircle = () => {
+        waveCanvas.beginPath()
+        waveCanvas.setFillStyle('#0A1A1A')
+        waveCanvas.arc(r, r, r, 0, 2 * Math.PI)
+        waveCanvas.fill()
+        // 更多圆形绘制逻辑...
+      }
+
+      const render = () => {
+        waveCanvas.clearRect(0, 0, width, height)
+        drawCircle()
+        // 添加波浪绘制逻辑
+        xOffset += speed
+        waveCanvas.draw()
+        requestAnimationFrame(render)
+      }
+      requestAnimationFrame(render)
+    })
+}
+
+// 以下函数需要根据实际的 DrawArc 类实现来调整
+function drawPresetGearArc(slideItem, isHalf) {}
+function drawPresetFourArc(slideItem) {}
+function drawTextGearArc(slideItem) {}
+function drawBlueArc(slideItem) {}
+
+// 这里需要实现 DrawArc 类，微信小程序使用 wx.createCanvasContext
+class DrawArc {
+  constructor(slideName, isGear = false) {
+    this.slideName = slideName
+    this.contexts = []
+    this.textArray = []
+    this.canvasWidth = 0 // 需要在实际使用时设置
+    this.angleInterval = Math.PI / 4 // 示例值，需要根据实际调整
+  }
+
+  addContext(canvasId, index) {
+    this.contexts.push({ id: canvasId, ctx: wx.createCanvasContext(canvasId) })
+  }
+
+  setTextArray(array, describe) {
+    this.textArray = array
+    // 设置描述的逻辑
+  }
+
+  drawFillArc(startAngle, color) {
+    this.contexts.forEach(({ ctx }) => {
+      ctx.setFillStyle(color)
+      ctx.beginPath()
+      ctx.arc(50, 50, 40, 0, 2 * Math.PI) // 示例参数
+      ctx.fill()
+      ctx.draw()
+    })
+  }
+
+  drawPercentArc(layer, colorType, percent) {}
+  drawGearArc(startAngle, gearIndex, isHalf, typeCode) {}
+  // 其他绘制方法需要实现
+}
+
+module.exports = arcUtil
+使用方式（在小程序页面中）：
+
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+// pages/index/index.js
+const arcUtil = require('../../utils/arcUtil')
+
+Page({
+  data: {
+    slideItem: {
+      canvas: ['canvas1', 'canvas2', 'canvas3'],
+      gearArray: ['1', '2', '3', '4'],
+      gearIndex: 0,
+      type: 'gear'
+    }
+  },
+  
+  onLoad() {
+    const events = arcUtil.animateCanvas(this.data.slideItem)
+    this.touchstart = events.touchstart
+    this.touchmove = events.touchmove
+    this.touchend = events.touchend
+    arcUtil.drawArcByType(this.data.slideItem)
+  },
+
+  touchstart(e) { this.touchstart(e) },
+  touchmove(e) { this.touchmove(e) },
+  touchend(e) { this.touchend(e) }
+})
+html
+
+Collapse
+
+Wrap
+
+Copy
+<!-- pages/index/index.wxml -->
+<canvas canvas-id="canvas1" bind:touchstart="touchstart" bind:touchmove="touchmove" bind:touchend="touchend"></canvas>
+<canvas canvas-id="canvas2"></canvas>
+<canvas canvas-id="canvas3"></canvas>
+注意事项：
+
+DrawArc 类的具体实现需要根据你的实际绘制需求完成，当前只是示例框架
+小程序的 canvas 使用 wx.createCanvasContext，不支持 DOM 操作
+事件绑定改为小程序的 bind:touchstart 等方式
+移除了 jQuery 和 Angular 的依赖，使用原生 JS
+drawCircleWave 的完整实现需要补充具体的波浪绘制逻辑
+你可能需要调整具体的绘制参数（如坐标、大小等）以适配你的界面
+建议根据你的具体需求进一步完善 DrawArc 类中的绘制方法。
+
+
+
+
+
+
+
+我问一下 关于属性 canvas 是一个html的属性？大概是可以使用js代码来绘制具体的UI？
+
+
+
+
+我来给你详细解释一下关于 canvas 的概念，以及它在 HTML 和微信小程序中的使用：
+
+1. canvas 在 HTML 中的定义
+在 HTML 中，<canvas> 是一个 HTML5 引入的元素，用于在网页上绘制图形。它本身只是一个空白的画布（类似于一张白纸），没有具体的绘制内容。要在上面绘制具体的 UI（如线条、圆形、矩形、图片等），需要通过 JavaScript 调用 Canvas API 来实现。
+
+HTML 示例:
+html
+
+Collapse
+
+Wrap
+
+Copy
+<canvas id="myCanvas" width="200" height="100"></canvas>
+id: 用于在 JavaScript 中获取这个 canvas 元素。
+width 和 height: 定义画布的宽度和高度（单位是像素）。
+JavaScript 操作: 通过 JavaScript 获取 canvas 元素，并使用其上下文（context，通常是 2D 上下文）来绘制：
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+const canvas = document.getElementById('myCanvas');
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = 'blue';
+ctx.fillRect(10, 10, 50, 50); // 绘制一个蓝色矩形
+所以，<canvas> 本身是一个 HTML 标签（属性），但它的强大之处在于可以通过 JavaScript 动态绘制各种图形，适用于游戏、数据可视化、动画等场景。
+
+2. canvas 在微信小程序中的使用
+在微信小程序中，canvas 的概念类似，但实现方式有所不同。小程序没有 DOM 操作（即没有 document.getElementById），因此它提供了一个自定义组件 <canvas>，并通过小程序特有的 API 来操作。
+
+WXML 示例:
+html
+
+Collapse
+
+Wrap
+
+Copy
+<canvas canvas-id="myCanvas" style="width: 200px; height: 100px;"></canvas>
+canvas-id: 小程序中用于标识 canvas 的唯一 ID，类似于 HTML 中的 id。
+style: 用于设置画布的宽高（在小程序中通常用 CSS 样式定义尺寸，而不是直接用 width 和 height 属性）。
+JavaScript 操作: 小程序使用 wx.createCanvasContext 来获取 canvas 的绘制上下文：
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+const ctx = wx.createCanvasContext('myCanvas');
+ctx.setFillStyle('blue');
+ctx.fillRect(10, 10, 50, 50);
+ctx.draw(); // 小程序中需要调用 draw() 来渲染
+注意:
+小程序的 canvas API 与 HTML5 Canvas API 大部分语法兼容，但有些细节不同（例如需要显式调用 draw()）。
+小程序支持触摸事件（如 bind:touchstart），而不是 HTML 的鼠标事件。
+3. 在你的代码中的 canvas
+在你提供的 AngularJS 代码和转换后的微信小程序代码中，canvas 的使用有所不同：
+
+AngularJS 版本:
+slideItem.canvas 是一个数组，存储的是多个 canvas 元素的 ID（例如 ['canvas1', 'canvas2', 'canvas3']）。
+通过 jQuery（$("#" + slideItem.canvas[...])）获取 DOM 元素，然后绑定触摸事件和绘制内容。
+假设这些 canvas 是 HTML 中的 <canvas> 标签。
+微信小程序版本:
+slideItem.canvas 同样是一个数组，存储的是小程序中 <canvas> 组件的 canvas-id。
+使用 wx.createCanvasContext 获取上下文，而不是 DOM 操作。
+触摸事件通过 WXML 的 bind:touchstart 等绑定到页面。
+4. 是否可以用 JS 绘制具体的 UI？
+是的，无论是 HTML 还是微信小程序，canvas 都可以通过 JavaScript 代码绘制具体的 UI。它的核心特点是：
+
+动态性: 你可以用代码绘制任何形状、颜色、动画，甚至加载图片。
+灵活性: 通过数学计算（如角度、坐标）绘制复杂的图形，例如你的代码中的圆弧（arc）、齿轮（gear）、波浪（wave）等。
+实时性: 可以响应用户交互（如触摸、鼠标移动）来更新绘制内容。
+例如，你的代码中：
+
+drawGearArc: 绘制带有齿轮样式的圆弧。
+drawCircleWave: 绘制带有波浪动画的圆形。 这些都是通过 JavaScript 操作 canvas 的上下文（context）实现的。
+5. 总结
+HTML 中的 canvas: 是一个 HTML 标签，提供了一个绘图区域，通过 JavaScript 的 Canvas 2D API 绘制内容。
+微信小程序中的 canvas: 是一个自定义组件，功能类似，但使用小程序专属 API 操作。
+绘制 UI: 无论哪种环境，都可以通过 JavaScript 编写逻辑来绘制具体的 UI，功能非常强大。
+如果你有更具体的问题（比如想了解某个绘制方法的实现细节），可以告诉我，我会进一步帮你解答！
+
+
+
+
+
+
+
+<div id="{{slideCurItem.slideName}}" class="status-canvas">
+                <canvas id="{{canvasName}}" class="canvas" ng-repeat="canvasName in slideCurItem.canvas"></canvas>
+              </div> 这段代码 是要画3个canvas吗？ 如果是微信小程序的代码，如何写，主要是这id
+
+
+
+
+让我来分析这段代码并解答你的问题。
+
+1. 分析现有代码
+这是 AngularJS 的模板代码，使用了 ng-repeat 指令：
+
+html
+
+Collapse
+
+Wrap
+
+Copy
+<div id="{{slideCurItem.slideName}}" class="status-canvas">
+  <canvas id="{{canvasName}}" class="canvas" ng-repeat="canvasName in slideCurItem.canvas"></canvas>
+</div>
+ng-repeat="canvasName in slideCurItem.canvas":
+这表示会根据 slideCurItem.canvas 数组中的每一项（canvasName）重复生成一个 <canvas> 元素。
+如果 slideCurItem.canvas 是一个包含 3 个元素的数组（例如 ['canvas1', 'canvas2', 'canvas3']），那么确实会生成 3 个 <canvas> 元素。
+id="{{canvasName}}":
+每个 <canvas> 的 id 会动态设置为 slideCurItem.canvas 数组中的值，例如 canvas1、canvas2、canvas3。
+最终生成的 HTML（假设 slideCurItem.canvas = ['canvas1', 'canvas2', 'canvas3']）：
+html
+
+Collapse
+
+Wrap
+
+Copy
+<div id="someSlideName" class="status-canvas">
+  <canvas id="canvas1" class="canvas"></canvas>
+  <canvas id="canvas2" class="canvas"></canvas>
+  <canvas id="canvas3" class="canvas"></canvas>
+</div>
+结论: 是的，这段代码会根据 slideCurItem.canvas 的长度绘制对应数量的 <canvas>，如果数组有 3 个元素，就会画 3 个 canvas。
+2. 转换为微信小程序代码
+微信小程序没有 ng-repeat 这样的 Angular 指令，而是使用 wx:for 来实现循环渲染。同时，小程序的 <canvas> 组件使用 canvas-id 而不是 id 来标识 canvas（虽然 id 也可以用，但 canvas-id 是专门用于 canvas 绘制的属性）。
+
+WXML 代码
+html
+
+Collapse
+
+Wrap
+
+Copy
+<view id="{{slideCurItem.slideName}}" class="status-canvas">
+  <canvas canvas-id="{{item}}" class="canvas" wx:for="{{slideCurItem.canvas}}" wx:key="index" />
+</view>
+view: 小程序中替代 <div> 的组件。
+wx:for="{{slideCurItem.canvas}}": 循环遍历 slideCurItem.canvas 数组，item 是默认的循环项变量（相当于 Angular 的 canvasName）。
+canvas-id="{{item}}": 将数组中的每个值设置为 <canvas> 的 canvas-id，用于后续通过 wx.createCanvasContext 操作。
+wx:key="index": 小程序要求循环时提供唯一的 key，这里用 index（循环索引）作为 key。
+class="canvas": 保持与原代码相同的样式类名。
+JS 数据
+在小程序的 Page 或 Component 中，需要在 data 中定义 slideCurItem：
+
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+Page({
+  data: {
+    slideCurItem: {
+      slideName: 'someSlideName',
+      canvas: ['canvas1', 'canvas2', 'canvas3']
+    }
+  }
+})
+生成的结果
+假设 slideCurItem.canvas = ['canvas1', 'canvas2', 'canvas3']，最终渲染的 WXML 会是：
+
+html
+
+Collapse
+
+Wrap
+
+Copy
+<view id="someSlideName" class="status-canvas">
+  <canvas canvas-id="canvas1" class="canvas"></canvas>
+  <canvas canvas-id="canvas2" class="canvas"></canvas>
+  <canvas canvas-id="canvas3" class="canvas"></canvas>
+</view>
+3. 关于 id 和 canvas-id
+HTML 中的 id:
+在 AngularJS 原代码中，id="{{canvasName}}" 是给每个 <canvas> 设置一个唯一的 DOM 标识符，以便通过 JavaScript（如 document.getElementById 或 jQuery）获取并操作。
+小程序中的 canvas-id:
+小程序的 <canvas> 使用 canvas-id 来标识具体的画布，之后通过 wx.createCanvasContext('canvas-id') 获取上下文进行绘制。
+小程序中也可以给 <canvas> 设置 id（如 <canvas id="someId" canvas-id="canvas1">），但 id 通常用于 CSS 选择器或事件绑定，而 canvas-id 是专门为 canvas 绘图设计的。
+如果需要绑定事件
+如果你的代码需要给这些 canvas 添加触摸事件（如你的 animateCanvas 函数），可以在 WXML 中这样写：
+
+html
+
+Collapse
+
+Wrap
+
+Copy
+<view id="{{slideCurItem.slideName}}" class="status-canvas">
+  <canvas 
+    canvas-id="{{item}}" 
+    class="canvas" 
+    bind:touchstart="touchstart" 
+    bind:touchmove="touchmove" 
+    bind:touchend="touchend" 
+    wx:for="{{slideCurItem.canvas}}" 
+    wx:key="index" 
+  />
+</view>
+然后在 JS 中实现事件处理函数：
+
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+Page({
+  data: {
+    slideCurItem: {
+      slideName: 'someSlideName',
+      canvas: ['canvas1', 'canvas2', 'canvas3']
+    }
+  },
+  touchstart(e) {
+    console.log('Touch start on canvas:', e.currentTarget.canvasId)
+  },
+  touchmove(e) {},
+  touchend(e) {}
+})
+4. 总结
+是否画 3 个 canvas: 是的，如果 slideCurItem.canvas 有 3 个元素，就会生成 3 个 <canvas>。
+小程序转换:
+使用 <view> 替代 <div>。
+使用 wx:for 替代 ng-repeat。
+使用 canvas-id 替代 id 来标识 canvas。
+保持动态绑定，确保每个 canvas 的标识与数组中的值对应。
+如果你需要进一步调整（比如添加具体的绘制逻辑），可以告诉我，我帮你完善！
+
+
+
+
+
+
+
+.status-canvas {
+    width: 100%;
+    height: 4.2rem;
+
+    #circle-wave {
+      position: absolute;
+      top: -2.24rem;
+      left: 0;
+      right: 0;
+      height: 5.2rem;
+      width: 5.2rem;
+      margin: 0 auto;
+    }
+
+    .canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 4.2rem;
+      width: 100%;
+    }
+
+    .canvas:nth-child(2) {
+      background-image: url("../img/common/dial_bg_detail.png");
+      background-repeat: no-repeat;
+      background-size: cover;
+    }
+  } 小程序无法直接使用？
+
+
+
+
+你提供的这段 CSS 是为 HTML 中的 .status-canvas 和其子元素设计的，但微信小程序的样式系统（WXSS）与传统 CSS 有一些差异。小程序无法直接使用你的 CSS，主要有以下几个原因：
+
+选择器限制: 小程序不支持复杂的选择器（如 #circle-wave 或 .canvas:nth-child(2)），只支持基本的类选择器（.class）和 ID 选择器（#id）。
+单位: 小程序推荐使用 rpx 作为响应式单位，而不是 rem。
+背景图片路径: 小程序中图片路径需要调整，通常放在项目目录下，且引用方式不同。
+布局方式: 小程序使用 Flexbox 布局较多，且不支持所有 CSS 属性。
+我来帮你将这段样式转换为小程序可用的 WXSS 代码，并解释调整的原因。
+
+转换为小程序 WXSS
+假设你的 WXML 结构类似于：
+
+html
+
+Collapse
+
+Wrap
+
+Copy
+<view class="status-canvas">
+  <canvas canvas-id="canvas1" class="canvas canvas-1"></canvas>
+  <canvas canvas-id="canvas2" class="canvas canvas-2"></canvas>
+  <canvas canvas-id="canvas3" class="canvas canvas-3"></canvas>
+  <view id="circle-wave" class="circle-wave"></view>
+</view>
+对应的 WXSS（status-canvas.wxss）：
+
+css
+
+Collapse
+
+Wrap
+
+Copy
+.status-canvas {
+  width: 100%;
+  height: 420rpx; /* 4.2rem 转换为 rpx，假设 1rem ≈ 100rpx，根据设计稿调整 */
+  position: relative; /* 小程序支持 position，但这里用 relative 作为容器 */
+}
+
+.circle-wave {
+  position: absolute;
+  top: -224rpx; /* -2.24rem 转换为 rpx */
+  left: 0;
+  right: 0;
+  height: 520rpx; /* 5.2rem 转换为 rpx */
+  width: 520rpx; /* 5.2rem 转换为 rpx */
+  margin: 0 auto;
+}
+
+.canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 420rpx; /* 4.2rem 转换为 rpx */
+  width: 100%;
+}
+
+/* 替代 :nth-child(2)，使用额外的类名 .canvas-2 */
+.canvas-2 {
+  background-image: url('/images/common/dial_bg_detail.png'); /* 小程序图片路径 */
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+调整说明
+单位转换:
+小程序推荐使用 rpx（responsive pixel），它是根据屏幕宽度自适应的单位。
+假设设计稿以 750px 宽度为基准，1rem 通常对应 100rpx（具体值取决于你的 rem 定义）。这里我将 4.2rem 转换为 420rpx，你需要根据实际设计稿调整。
+选择器问题:
+小程序不支持 :nth-child(2)，因此我为第二个 canvas 添加了额外的类名 .canvas-2 来实现同样的效果。你需要在 WXML 中手动为第二个 canvas 添加这个类：
+html
+
+Collapse
+
+Wrap
+
+Copy
+<canvas canvas-id="canvas2" class="canvas canvas-2"></canvas>
+ID 选择器:
+#circle-wave 在小程序中改为类选择器 .circle-wave，因为小程序中 ID 选择器的使用场景较少，且这里没有必要用 ID。你可以在 WXML 中将 id="circle-wave" 改为 class="circle-wave"。
+图片路径:
+HTML 中的 ../img/common/dial_bg_detail.png 需要调整为小程序的路径。
+小程序中图片通常放在项目根目录下的 images 文件夹，例如 /images/common/dial_bg_detail.png。
+确保图片文件已放入正确位置，并在 WXSS 中使用绝对路径（以 / 开头）引用。
+布局:
+position: absolute 和其他定位属性在小程序中是支持的，所以保留了这些样式。
+margin: 0 auto 在小程序中也有效，用于水平居中。
+完整小程序代码示例
+WXML
+html
+
+Collapse
+
+Wrap
+
+Copy
+<view class="status-canvas">
+  <canvas canvas-id="canvas1" class="canvas canvas-1"></canvas>
+  <canvas canvas-id="canvas2" class="canvas canvas-2"></canvas>
+  <canvas canvas-id="canvas3" class="canvas canvas-3"></canvas>
+  <view class="circle-wave"></view>
+</view>
+WXSS
+css
+
+Collapse
+
+Wrap
+
+Copy
+.status-canvas {
+  width: 100%;
+  height: 420rpx;
+  position: relative;
+}
+
+.circle-wave {
+  position: absolute;
+  top: -224rpx;
+  left: 0;
+  right: 0;
+  height: 520rpx;
+  width: 520rpx;
+  margin: 0 auto;
+}
+
+.canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 420rpx;
+  width: 100%;
+}
+
+.canvas-2 {
+  background-image: url('/images/common/dial_bg_detail.png');
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+JS（可选）
+如果需要动态操作 canvas：
+
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+Page({
+  onReady() {
+    const ctx = wx.createCanvasContext('canvas1');
+    ctx.fillStyle = 'red';
+    ctx.fillRect(10, 10, 50, 50);
+    ctx.draw();
+  }
+});
+注意事项
+图片文件:
+确保 dial_bg_detail.png 已放在 /images/common/ 目录下。如果路径不同，调整 WXSS 中的 background-image。
+尺寸调整:
+rpx 值需要根据你的设计稿和屏幕适配方案调整。如果 1rem 不是 100rpx，可以告诉我你的具体 rem 定义，我帮你换算。
+canvas 背景:
+小程序的 <canvas> 支持背景图片，但如果后续通过 wx.createCanvasContext 绘制内容，可能会覆盖背景。如果不需要动态绘制，考虑用 <image> 替代第二个 canvas。
+如果还有问题（比如具体效果没达到预期），可以告诉我，我再帮你优化！
+
+
+
+
+
+
+
+还记得你给我实现的arcUtil.js 那个类吗？ 里边有一个DrawArc的实现方法，function drawArc(slideName, isArc) {
+  /** 1、init all variable with default value **/
+  // the context array 所有画布对象
+  this.contexts = [];
+  // the text array 挡位文本数组
+  this.textArray = [];
+  // the text describe array 挡位描述文本数组
+  this.textArrayDescribe = [];
+  // the unit of font size in view 页面字体单位大小
+  this.unit = parseFloat(document.documentElement.style.fontSize.replace('px', ''));//rem
+  // the width of canvas 画布的宽度
+  this.canvasWidth = document.getElementById(slideName) ? document.getElementById(slideName).offsetWidth : 0;
+  // the angle interval 线段间的间隔弧度
+  this.angleInterval = Math.PI * 8 / 180;
+  // the x coordinate of the centre of a circle/arc 圆弧圆心的x坐标
+  this.arcX = this.canvasWidth / 2;
+  // the y coordinate of the centre of a circle 圆弧圆心的y坐标
+  this.arcY = this.arcX;
+  // the radius of circle, with 0.1rem margin 圆弧半径，0.1rem是边距
+  this.arcRadius = this.arcX - 0.1 * this.unit;
+  //initial start degree 初始的开始弧度
+  this.initStartAngle = Math.PI / 2;
+  //initial end degree 初始的结束弧度
+  this.initEndAngle = Math.PI * 2 + Math.PI / 2;
+  //the arc angle  整个圆弧的弧度
+  this.arcAngle = Math.PI * 2;
+  // reset arcY,arcRaduis and so on for arc
+  if (isArc) {
+    // the y coordinate of the centre of a arc
+    this.arcY = this.arcX + 4 * this.unit;
+    this.arcRadius = this.arcX + 1.5 * this.unit;
+    this.initStartAngle = 232 * Math.PI / 180;
+    this.initEndAngle = 308 * Math.PI / 180;
+  }
+
+  /**
+   * 2、get canvas according to canvas id, set the height, width, z-index
+   * of canvas and get the context of canvas
+   * @param canvasName String canvas id
+   * @param zIndex number z-index of canvas
+   */
+  this.addContext = function (canvasName, zIndex) {
+    //get canvas element according to id and set the height,width,z-index of canvas
+    var canvas = document.getElementById(canvasName);
+    if (!canvas) {
+      return
+    }
+    globalDrawArcCanvas.push(canvas);
+    canvas.width = this.canvasWidth;
+    if (isArc) {
+      // set the height of arc canvas
+      canvas.height = 2 * this.unit + (1 - Math.cos(52 * Math.PI / 180)) * this.arcRadius;
+    } else {
+      canvas.height = this.canvasWidth;
+    }
+    canvas.style.zIndex = zIndex;
+    //get the context of canvas
+    var context = canvas.getContext('2d');
+    var width = canvas.offsetWidth;
+    //  计算画布的高度
+    var height = canvas.offsetHeight;
+    var mW = canvas.width = width;
+    var mH = canvas.height = height;
+    if (window.devicePixelRatio) {
+      canvas.style.width = mW;
+      canvas.style.height = mH;
+      canvas.width = mW * window.devicePixelRatio;
+      canvas.height = mH * window.devicePixelRatio;
+      context.scale(window.devicePixelRatio, window.devicePixelRatio);
+    }
+    //push into the contexts
+    this.contexts.push(context);
+  };
+
+  /**
+   * 3、set the text array for arc
+   * @param textArray 挡位文本数组
+   * @param textArrayDescribe 挡位描述数组
+   */
+  this.setTextArray = function (textArray, textArrayDescribe) {
+    this.textArray = textArray;
+    this.textArrayDescribe = textArrayDescribe || [];
+    var halfArcAngle = (textArray.length - 1) * this.angleInterval;
+    // set the total arc angle
+    this.arcAngle = halfArcAngle * 2;
+  };
+
+  /**
+   * draw the circle of canvas according to the color, starting degree and ending degree
+   * 根据颜色类型、开始度数和结束度数画对应画布的圆环
+   * @param contextIndex 画布对象的下标
+   * @param colorType： grey、blue、red，default grey
+   * @param startAngle: 开始度数
+   * @param endAngle: 结束度数
+   * @param needClear: whether need to clear pixels 是否需要清除像素
+   */
+  this.drawBaseArc = function (contextIndex, colorType, startAngle, endAngle, needClear) {
+    if (contextIndex >= 0) {
+      var ctx = this.contexts[contextIndex];
+      if (needClear == undefined || needClear) {
+        //Clears the specified pixels in the given rectangle
+        // 在给定的矩形内清除指定的像素
+        ctx.clearRect(0, 0, this.canvasWidth, this.canvasWidth);
+      }
+      ctx.beginPath();
+      // sets or returns the end of line style 设置或返回线条的结束端点样式
+      // ctx.lineCap = 'round';
+      if (colorType.indexOf('ro-') !== -1) { // draw ro circle
+        // sets or returns the width of the current stroke line, in pixels
+        // 设置或返回当前笔触线条的宽度，以像素计
+        ctx.lineWidth = 0.04 * this.unit;//0.1rem
+        if (colorType === 'ro-grey') {
+          ctx.strokeStyle = '#444D50';
+        } else if (colorType === 'ro-white') {
+          ctx.strokeStyle = 'white';
+        } else if (colorType === 'ro-red') {
+          ctx.strokeStyle = '#F74C2F';
+        }
+      } else {
+        // sets or returns the width of the current stroke line, in pixels
+        // 设置或返回当前笔触线条的宽度，以像素计
+        ctx.lineWidth = 0.06 * this.unit;
+        //context.createLinearGradient(x0,y0,x1,y1);
+        //x0:渐变开始点的 x 坐标;y0:渐变开始点的 y 坐标;x1:渐变结束点的 x 坐标;y1:渐变结束点的 y 坐标
+        var grad = ctx.createLinearGradient(0, 0, this.canvasWidth, 0);
+        if (colorType === 'blue') {
+          // grad.addColorStop(0, '#273B5E');
+          // grad.addColorStop(0.3, '#355970');
+          grad.addColorStop(0, '#2a54B7');
+          grad.addColorStop(1, '#50cfd1');
+          // grad.addColorStop(1, '#DD703C');
+        } else if (colorType === 'onlyBlue') {//红色
+          grad.addColorStop(0, 'rgba(0,205,212,0.1)');
+          grad.addColorStop(1, 'rgba(0,205,212,0.1)');
+        } else if (colorType === 'red') {//红色
+          grad.addColorStop(0, '#6ACBB3');
+          grad.addColorStop(0.3, '#CF7A4B');
+          grad.addColorStop(1, '#EC652F');
+        } else if (colorType === '#fff') {//红色
+          grad.addColorStop(0, '#fff');
+          // grad.addColorStop(0.3, '#fff');
+          grad.addColorStop(1, '#4ee5ec');
+        } else if (colorType === '#4ee5ec') {//红色
+          grad.addColorStop(0, '#4ee5ec');
+          // grad.addColorStop(0.3, '#4ee5ec');
+          grad.addColorStop(1, '#ffdb0b');
+        } else if (colorType === '#ffdb0b') {//红色
+          grad.addColorStop(0, '#ffdb0b');
+          // grad.addColorStop(0.3, '#ffdb0b');
+          grad.addColorStop(1, '#ff0303');
+        } else if (colorType === '#ff0303') {//红色
+          grad.addColorStop(0, '#ffdb0b');
+          // grad.addColorStop(0.3, '#ff0303');
+          grad.addColorStop(1, '#ff0303');
+        } else if (colorType === 'karing-tempe-0') {//水温
+          grad.addColorStop(0, '#000');
+          grad.addColorStop(0.2, '#000');
+          grad.addColorStop(0.5, '#00CDD4');
+          grad.addColorStop(1, '#6787FF');
+        } else if (colorType === 'karing-tempe-1') {//水温
+          grad.addColorStop(0, '#00CDD4');
+          grad.addColorStop(0.5, '#4D9DFF');
+          grad.addColorStop(1, '#A64DFF');
+        } else if (colorType === 'karing-tempe-2') {//水温
+          grad.addColorStop(0, '#00CDD4');
+          grad.addColorStop(0.5, '#6787FF');
+          grad.addColorStop(1, '#C144BA');
+        } else if (colorType === 'karing-tempe-3') {//水温
+          grad.addColorStop(0, '#4D9DFF');
+          grad.addColorStop(0.5, '#A64DFF');
+          grad.addColorStop(1, '#F53131');
+        } else if (colorType === 'karing-tempe-4') {//水温
+          grad.addColorStop(0, '#6787FF');
+          grad.addColorStop(0.5, '#C144BA');
+          grad.addColorStop(1, '#F53131');
+        } else if (colorType === 'karing-tempe-5') {//水温
+          grad.addColorStop(0, '#A64DFF');
+          grad.addColorStop(0.5, '#F53131');
+          grad.addColorStop(0.8, '#000');
+          grad.addColorStop(1, '#000');
+        } else if (colorType === 'karing-gage-0') {//水压
+          grad.addColorStop(0, '#000');
+          grad.addColorStop(0.2, '#000');
+          grad.addColorStop(0.5, '#00CDD4');
+          grad.addColorStop(1, '#45A2FB');
+        } else if (colorType === 'karing-gage-1') {//水压
+          grad.addColorStop(0, '#00CDD4');
+          grad.addColorStop(0.5, '#00CDD4');
+          grad.addColorStop(1, '#4D9DFF');
+        } else if (colorType === 'karing-gage-2') {//水压
+          grad.addColorStop(0, '#00CDD4');
+          grad.addColorStop(0.5, '#45A2FB');
+          grad.addColorStop(1, '#4D9DFF');
+        } else if (colorType === 'karing-gage-3') {//水压
+          grad.addColorStop(0, '#00CDD4');
+          grad.addColorStop(0.7, '#45A2FB');
+          grad.addColorStop(0.5, '#4D9DFF');
+          grad.addColorStop(1, '#4D9DFF');
+        } else if (colorType === 'karing-gage-4') {//水压
+          grad.addColorStop(0, '#45A2FB');
+          grad.addColorStop(0.5, '#4D9DFF');
+          grad.addColorStop(0.8, '#000');
+          grad.addColorStop(1, '#000');
+        } else {//默认是灰色
+          grad.addColorStop(0, '#1B1F20');
+          grad.addColorStop(0.3, '#2F3537');
+          grad.addColorStop(1, '#444D50');
+        }
+        //sets or returns the color, gradient, or pattern for strokes
+        // 设置或返回用于笔触的颜色、渐变或模式。
+        ctx.strokeStyle = grad;
+      }
+      //context.arc(x,y,r,sAngle,eAngle,counterclockwise);
+      //x:圆的中心的 x 坐标;y:圆的中心的 y 坐标;r:圆的半径;
+      //sAngle:起始角，以弧度计（弧的圆形的三点钟位置是 0 度）;eAngle:结束角，以弧度计。
+      //counterclockwise:可选。规定应该逆时针还是顺时针绘图。False = 顺时针，true = 逆时针。
+      //根据角度数换弧度Math.PI*n/180;
+      ctx.arc(
+        this.arcX,//圆的中心的 x 坐标
+        this.arcY,//圆的中心的 y 坐标
+        this.arcRadius,//圆环的半径
+        startAngle,//起始角，以弧度计（弧的圆形的三点钟位置是 0 度）。左下角开始
+        endAngle,//结束角，以弧度计。右下角结束
+        false);
+      //draw the defined path 绘制已定义的路径
+      ctx.stroke();
+      ctx.closePath();
+    }
+  };
+
+  /**
+   * draw the circle/arc with fill arcAngle画整个填充颜色的圆环
+   * @param contextIndex 画布对象的下标
+   * @param colorType grey、blue、red
+   */
+  this.drawFillArc = function (contextIndex, colorType) {
+    this.drawBaseArc(contextIndex, colorType, this.initStartAngle, this.initEndAngle);
+  };
+
+  /**
+   * Draw a ring according to the percentage 根据百分比画圆环
+   * @param contextIndex 画布对象的下标
+   * @param colorType grey、blue、red
+   * @param percentValue 填充颜色所占圆环的百分比
+   */
+  this.drawPercentArc = function (contextIndex, colorType, percentValue) {
+    if (percentValue >= 0 && percentValue <= 100) {
+      var endAngle = this.initStartAngle + percentValue / 100 * this.arcAngle;
+      this.drawBaseArc(contextIndex, colorType, this.initStartAngle, endAngle);
+    }
+  };
+
+  /**
+   * draw half color arc 绘制半色圆弧
+   * @param contextIndex
+   * @param arcValue the current arc value of gear
+   */
+  this.drawHalfArc = function (contextIndex, arcValue) {
+    if (arcValue >= 1.5 * Math.PI || arcValue <= this.initEndAngle) {// whether over half 是否过中线了
+      //画蓝色圆弧 draw blue arc
+      this.drawBaseArc(contextIndex, 'blue', this.initStartAngle, 1.5 * Math.PI);
+      // 画红色圆弧,不清除像素 draw red arc, don't clear piexls
+      this.drawBaseArc(contextIndex, 'red', 1.5 * Math.PI, arcValue, false);
+    } else {
+      //只需要画蓝色圆弧 only draw blue arc
+      this.drawBaseArc(contextIndex, 'blue', this.initStartAngle, arcValue);
+    }
+  };
+
+  // draw the needle 绘制指针
+  this.drawNeedle = function (contextIndex, colorType) {
+    var ctx = this.contexts[contextIndex];
+    // set text style
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = "#fff";// set color 设置填充颜色
+    // clear pixels在给定的矩形内清除指定的像素
+    ctx.clearRect(0, 0, this.canvasWidth, this.canvasWidth);
+    ctx.beginPath();
+    var x = this.arcX;// the x coordinate of needle 指针所在的X坐标
+    var y = this.arcY - this.arcRadius - 0.2 * this.unit;// the y coordinate of needle 指针所在的Y坐标
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - 0.05 * this.unit, y + 1.05 * this.unit);
+    ctx.lineTo(x + 0.05 * this.unit, y + 1.05 * this.unit);
+    ctx.fill(); // fill the needle 闭合形状并且以填充方式绘制出来
+    ctx.closePath();
+    // set the color of main line
+    if (colorType == 'blue') {
+      ctx.fillStyle = '#00CDD4';
+    } else if (colorType == 'red') {
+      ctx.fillStyle = '#EC652F';
+    } else if (colorType === '#fff') {
+      ctx.fillStyle = '#fff';
+    } else if (colorType === '#4ee5ec') {
+      ctx.fillStyle = '#4ee5ec';
+    } else if (colorType === '#ffdb0b') {
+      ctx.fillStyle = '#ffdb0b';
+    } else if (colorType === '#ff0303') {
+      ctx.fillStyle = '#ff0303';
+    } else if (colorType === 'karing-tempe-0') {//水温
+      ctx.fillStyle = '#00CDD4';
+    } else if (colorType === 'karing-tempe-1') {//水温
+      ctx.fillStyle = '#4D9DFF';
+    } else if (colorType === 'karing-tempe-2') {//水温
+      ctx.fillStyle = '#6787FF';
+    } else if (colorType === 'karing-tempe-3') {//水温
+      ctx.fillStyle = '#A64DFF';
+    } else if (colorType === 'karing-tempe-4') {//水温
+      ctx.fillStyle = '#C144BA';
+    } else if (colorType === 'karing-tempe-5') {//水温
+      ctx.fillStyle = '#F53131';
+    } else if (colorType === 'karing-gage-0') {//水压
+      ctx.fillStyle = '#00CDD4';
+    } else if (colorType === 'karing-gage-1') {//水压
+      ctx.fillStyle = '#00CDD4';
+    } else if (colorType === 'karing-gage-2') {//水压
+      ctx.fillStyle = '#45A2FB';
+    } else if (colorType === 'karing-gage-3') {//水压
+      ctx.fillStyle = '#4D9DFF';
+    } else if (colorType === 'karing-gage-4') {//水压
+      ctx.fillStyle = '#4D9DFF';
+    }
+    ctx.fillRect(this.arcX - 0.015 * this.unit, y - 0.83 * this.unit,
+      0.03 * this.unit, 0.7 * this.unit);
+  };
+
+  // 绘制单条文本和线段
+  /**
+   * draw single line and text
+   * @param ctx
+   * @param angle the move angle
+   * @param lineColor the color of line
+   * @param text the text to draw
+   * @param direction the position of text
+   */
+  this.drawSingleLine = function (ctx, angle, lineColor, text, direction) {
+    // save current canvas status 保存当前绘图环境（canvas的属性、剪辑区域、translate）
+    ctx.save();
+    // 位移 move translate
+    ctx.translate(this.arcX - Math.cos(angle) * this.arcRadius,
+      this.arcY - Math.sin(angle) * this.arcRadius);
+    if (text !== undefined) {//绘制文本 draw text
+      console.log('0.3 * this.unit----', 0.25 * this.unit)
+      ctx.font = 0.3 * this.unit + "px HelveticaNeueLTPro-Lt";
+      if (localStorage.language == 'zh_CN') {
+        ctx.font = 0.3 * this.unit + "px PingFangSC-Light,Microsoft Yahei";
+      }
+      ctx.fillStyle = '#565656';
+      if (direction === 'left') {
+        ctx.fillText(text, -0.25 * this.unit, -0.9 * this.unit);
+      } else {
+        ctx.fillText(text, 0.25 * this.unit, -0.9 * this.unit);
+      }
+    }
+    // rotate the arc 旋转弧度
+    ctx.rotate(angle - Math.PI / 2);
+    ctx.fillStyle = lineColor;
+    // draw the line
+    if (text !== undefined) {//绘制长线 draw long line
+      ctx.font = 0.2 * this.unit + "px HelveticaNeueLTPro-Lt";
+      ctx.fillText('|', 0, -0.5 * this.unit, 0.02 * this.unit);
+    }
+    // else {//绘制短线 draw short line
+    //   ctx.font = 0.08 * this.unit + "px HelveticaNeueLTPro-Lt";
+    //   ctx.fillText('|', 0, -0.4 * this.unit, 0.02 * this.unit);
+    // }
+    // 还原上次save()状态
+    ctx.restore();
+  };
+
+  // draw all text and line for number gear arc 绘制所有文本和线段
+  this.drawTextLine = function (contextIndex, textIndex) {
+    var ctx = this.contexts[contextIndex];
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // the position of middle line 中线所在的位置
+    var angle = Math.PI / 2;
+    // draw the text and line in left 绘制左边的文本和线段
+    if ((textIndex - 1) >= 0) {
+      //recalculate the Radian of the next characte 重新计算下一个字符的弧度
+      angle -= this.angleInterval;
+      // draw short line 绘制短线
+      this.drawSingleLine(ctx, angle, '#CBCBCB');
+      // recalculate the Radian of the next characte 重新计算下一个字符的弧度
+      angle -= this.angleInterval;
+      // draw long line and text 绘制文本和长线
+      this.drawSingleLine(ctx, angle, '#A1A1A1', this.textArray[textIndex - 1], 'left');
+    }
+    if ((textIndex - 2) >= 0) {
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle -= this.angleInterval;
+      // draw short line 绘制短线
+      this.drawSingleLine(ctx, angle, '#989898');
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle -= this.angleInterval;
+      // draw long line 绘制长线
+      this.drawSingleLine(ctx, angle, '#818181', '');
+    }
+    // reset the angle as the position of middle line中线所在的位置
+    angle = Math.PI / 2;
+    // draw the text and line in right 绘制右边的文本和线段
+    if ((textIndex + 1) < this.textArray.length) {
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle += this.angleInterval;
+      // draw short line 绘制短线
+      this.drawSingleLine(ctx, angle, '#CBCBCB');
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle += this.angleInterval;
+      //  draw long line and text 绘制文本和长线
+      this.drawSingleLine(ctx, angle, '#A1A1A1', this.textArray[textIndex + 1], 'right');
+    }
+    if ((textIndex + 2) < this.textArray.length) {
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle += this.angleInterval;
+      // draw short line 绘制短线
+      this.drawSingleLine(ctx, angle, '#989898');
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle += this.angleInterval;
+      // draw long line 绘制长线
+      this.drawSingleLine(ctx, angle, '#818181', '');
+    }
+  };
+
+  //  draw line and text for text gear arc 绘制长文本和线段
+  this.drawLongTextLine = function (contextIndex, textIndex) {
+    var ctx = this.contexts[contextIndex];
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    var angle = Math.PI / 2;
+    // draw the text and line in left 绘制左边的文本和线段
+    if ((textIndex - 1) >= 0) {
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle -= this.angleInterval;
+      // draw short line 绘制短线
+      this.drawSingleLine(ctx, angle, '#CBCBCB');
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle -= this.angleInterval;
+      // draw short line 绘制短线
+      this.drawSingleLine(ctx, angle, '#A1A1A1');
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle -= this.angleInterval;
+      // draw long line and text  绘制文本和长线
+      this.drawSingleLine(ctx, angle, '#989898', this.textArray[textIndex - 1], 'left');
+    }
+    if ((textIndex - 2) >= 0) {
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle -= this.angleInterval;
+      // draw short line 绘制短线
+      this.drawSingleLine(ctx, angle, '#818181');
+    }
+    // reset the angle as the position of middle line 中线所在的位置
+    angle = Math.PI / 2;
+    // draw the text and line in right 绘制右边的文本和线段
+    if ((textIndex + 1) < this.textArray.length) {
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle += this.angleInterval;
+      // draw short line 绘制短线
+      this.drawSingleLine(ctx, angle, '#CBCBCB');
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle += this.angleInterval;
+      // draw short line 绘制短线
+      this.drawSingleLine(ctx, angle, '#A1A1A1');
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle += this.angleInterval;
+      // draw long line and text 绘制文本和长线
+      this.drawSingleLine(ctx, angle, '#989898', this.textArray[textIndex + 1], 'right');
+    }
+    if ((textIndex + 2) < this.textArray.length) {
+      // recalculate the Radian of the next characte  重新计算下一个字符的弧度
+      angle += this.angleInterval;
+      // draw short line 绘制短线
+      this.drawSingleLine(ctx, angle, '#818181');
+    }
+  };
+
+  // 绘制当前所在的挡位draw the target gear number/text
+  this.drawTargetText = function (contextIndex, textIndex, isString, isText) {
+    if (contextIndex < this.contexts.length && textIndex < this.textArray.length && textIndex >= 0) {
+      // var ctx = this.contexts[contextIndex];
+      var deviceArc = document.querySelector('.device-arc');
+      var value = document.querySelector('.value-in');
+      var describeValue = document.querySelector('.describe-value');
+      if (value) {
+        value.innerHTML = this.textArray[textIndex];
+        if (describeValue && this.textArrayDescribe.length > 0) {
+          describeValue.innerHTML = this.textArrayDescribe[textIndex];
+        } else {
+          if (!(this.textArrayDescribe.length > 0) && describeValue) {
+            describeValue.remove();
+          } else if ((!describeValue) && this.textArrayDescribe.length > 0) {
+            describeValue = document.createElement('div');
+            describeValue.className = 'describe-value';
+            describeValue.innerHTML = this.textArrayDescribe[textIndex];
+
+            if (localStorage.language === 'zh_CN' && isText) {
+              if (describeValue && this.textArrayDescribe.length > 0) {
+                describeValue.style.fontSize = isString ? 0.22 * this.unit + 'px' : 0.3125 * this.unit + 'px';
+                if (isIpad) {
+                  describeValue.style.lineHeight = 0.2 * this.unit + 4 + 10 + 'px';
+                } else {
+                  describeValue.style.lineHeight = 0.2 * this.unit + 4 + 'px';
+                }
+                describeValue.style.fontFamily = 'PingFangSC-Light';
+              }
+            } else {
+              if (describeValue && this.textArrayDescribe.length > 0) {
+                describeValue.style.fontSize = isString ? 0.22 * this.unit + 'px' : 0.3125 * this.unit + 'px';
+                if (isIpad) {
+                  describeValue.style.lineHeight = isString ? 0.24 * this.unit + 4 + 10 + 'px' : 0.3125 * this.unit + 4 + 10 + 'px';
+                } else {
+                  describeValue.style.lineHeight = isString ? 0.24 * this.unit + 4 + 'px' : 0.3125 * this.unit + 4 + 'px';
+                }
+                describeValue.style.fontFamily = 'HelveticaNeueLTPro-Lt';
+              }
+            }
+            var presetValue = document.querySelector('.preset-value');
+            if (value && describeValue && presetValue) {
+              presetValue.insertBefore(describeValue, value);
+            }
+          }
+        }
+        if (localStorage.language === 'zh_CN' && isText) {
+          value.style.fontSize = isString ? 0.84 * this.unit + 'px' : 1.25 * this.unit + 'px';
+          value.style.lineHeight = 0.8 * this.unit + 4 + 'px';
+          value.style.fontFamily = 'PingFangSC-Light';
+        } else {
+          value.style.fontSize = isString ? 0.94 * this.unit + 'px' : 1.25 * this.unit + 'px';
+          value.style.lineHeight = isString ? 0.97 * this.unit + 4 + 'px' : 1.25 * this.unit + 4 + 'px';
+          value.style.fontFamily = 'HelveticaNeueLTPro-Lt';
+        }
+      } else {
+        var presetValue = document.createElement('div');
+        presetValue.className = 'preset-value';
+        value = document.createElement('div');
+        value.className = 'value-in';
+        if (this.textArrayDescribe.length > 0) {
+          describeValue = document.createElement('div');
+          describeValue.className = 'describe-value';
+        }
+
+        if (localStorage.language === 'zh_CN' && isText) {
+          value.style.fontSize = isString ? 0.84 * this.unit + 'px' : 1.25 * this.unit + 'px';
+          value.style.lineHeight = 0.8 * this.unit + 4 + 'px';
+          value.style.fontFamily = 'PingFangSC-Light';
+
+          if (this.textArrayDescribe.length > 0) {
+            describeValue.style.fontSize = isString ? 0.22 * this.unit + 'px' : 0.3125 * this.unit + 'px';
+            if (isIpad) {
+              describeValue.style.lineHeight = 0.2 * this.unit + 4 + 10 + 'px';
+            } else {
+              describeValue.style.lineHeight = 0.2 * this.unit + 4 + 'px';
+            }
+            describeValue.style.fontFamily = 'PingFangSC-Light';
+          }
+
+
+        } else {
+          value.style.fontSize = isString ? 0.94 * this.unit + 'px' : 1.25 * this.unit + 'px';
+          value.style.lineHeight = isString ? 0.97 * this.unit + 4 + 'px' : 1.25 * this.unit + 4 + 'px';
+          value.style.fontFamily = 'HelveticaNeueLTPro-Lt';
+
+          if (this.textArrayDescribe.length > 0) {
+            describeValue.style.fontSize = isString ? 0.22 * this.unit + 'px' : 0.3125 * this.unit + 'px';
+            if (isIpad) {
+              describeValue.style.lineHeight = isString ? 0.24 * this.unit + 4 + 10 + 'px' : 0.3125 * this.unit + 4 + 10 + 'px';
+            } else {
+              describeValue.style.lineHeight = isString ? 0.24 * this.unit + 4 + 'px' : 0.3125 * this.unit + 4 + 'px';
+            }
+
+            describeValue.style.fontFamily = 'HelveticaNeueLTPro-Lt';
+          }
+
+        }
+        value.innerHTML = this.textArray[textIndex];
+        if (this.textArrayDescribe.length > 0) {
+          describeValue.innerHTML = this.textArrayDescribe[textIndex];
+          presetValue.appendChild(describeValue);
+        } else {
+          if (describeValue) {
+            describeValue.remove();
+          }
+        }
+        presetValue.appendChild(value);
+        deviceArc.appendChild(presetValue);
+      }
+      // ctx.textAlign = 'center';
+      // ctx.textBaseline = 'middle';
+      // // clear pixels在给定的矩形内清除指定的像素
+      // ctx.clearRect(0, 0, this.canvasWidth, this.canvasWidth);
+      // ctx.fillStyle = 'white';
+      // ctx.font = 1.2 * this.unit + "px HelveticaNeueLTPro-Lt";
+      // if (isString) {
+      //   ctx.font = 0.94 * this.unit + "px HelveticaNeueLTPro-Lt";
+      //   if (localStorage.language == 'zh_CN') {
+      //     ctx.font = 0.94 * this.unit + "px PingFangSC-Light,Microsoft Yahei";
+      //   }
+      // }
+      // ctx.fillText(this.textArray[textIndex], this.arcX,
+      //   this.arcY - this.arcRadius - 1.87 * this.unit);
+    }
+  };
+
+  // 绘制当前所在的挡位draw the target gear number/text
+  this.drawPresetTargetText = function (contextIndex, textIndex, isString) {
+    if (contextIndex < this.contexts.length && textIndex < this.textArray.length && textIndex >= 0) {
+      var ctx = this.contexts[contextIndex];
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      // clear pixels在给定的矩形内清除指定的像素
+      ctx.clearRect(0, 0, this.canvasWidth, this.canvasWidth);
+      ctx.fillStyle = 'white';
+      ctx.font = 1.2 * this.unit + "px HelveticaNeueLTPro-Lt";
+      if (isString) {
+        ctx.font = 0.94 * this.unit + "px HelveticaNeueLTPro-Lt";
+        if (localStorage.language == 'zh_CN') {
+          ctx.font = 0.94 * this.unit + "px PingFangSC-Light,Microsoft Yahei";
+        }
+      }
+      ctx.fillText(this.textArray[textIndex], this.arcX,
+        this.arcY - this.arcRadius - 1.76 * this.unit);
+    }
+  };
+
+  // draw number arc  绘制挡位圆弧
+  this.drawGearArc = function (contextIndex, textIndex, isHalf, typeCode) {
+    if (contextIndex + 2 < this.contexts.length) {
+      var colorType = 'blue';
+      if (isHalf && (textIndex > this.textArray.length / 2)) {
+        colorType = 'red';
+      }
+
+      if (typeCode) {
+        colorType = typeCode + '-' + textIndex;
+      }
+
+      // draw base arc according to colorType 绘制圆弧
+      this.drawFillArc(contextIndex, colorType);
+      // draw text and line 绘制部分文本和线段
+      this.drawTextLine(contextIndex, textIndex);
+      //draw needle 绘制指针
+      this.drawNeedle(contextIndex + 1, colorType);
+      // draw the target gear number  绘制当前所在的挡位
+      this.drawTargetText(contextIndex + 2, textIndex);
+    }
+  };
+
+  // draw number arc  绘制挡位圆弧
+  this.drawBlueGearArc = function (contextIndex) {
+    var colorType = 'onlyBlue';
+    // draw base arc according to colorType 绘制圆弧
+    this.drawFillArc(contextIndex, colorType);
+  };
+
+  // draw number arc  绘制挡位圆弧
+  this.drawPresetGearArc = function (contextIndex, textIndex, isHalf) {
+    if (contextIndex + 2 < this.contexts.length) {
+      var colorType = 'blue';
+      if (isHalf && (textIndex > this.textArray.length / 2)) {
+        colorType = 'red';
+      }
+      // draw base arc according to colorType 绘制圆弧
+      this.drawFillArc(contextIndex, colorType);
+      // draw text and line 绘制部分文本和线段
+      this.drawTextLine(contextIndex, textIndex);
+      //draw needle 绘制指针
+      this.drawNeedle(contextIndex + 1, colorType);
+    }
+  };
+
+  // draw number arc  绘制挡位圆弧
+  this.drawPresetFourArc = function (contextIndex, textIndex) {
+    if (contextIndex + 2 < this.contexts.length) {
+      var colorType = '#fff';
+      if (textIndex > this.textArray.length / 4 && textIndex < this.textArray.length / 2) {
+        colorType = '#4ee5ec';
+      }
+      if (textIndex > this.textArray.length / 2 && textIndex < this.textArray.length / 4 * 3) {
+        colorType = '#ffdb0b';
+      }
+      if (textIndex > this.textArray.length / 4 * 3) {
+        colorType = '#ff0303';
+      }
+      // draw base arc according to colorType 绘制圆弧
+      this.drawFillArc(contextIndex, colorType);
+      // draw text and line 绘制部分文本和线段
+      this.drawTextLine(contextIndex, textIndex);
+      //draw needle 绘制指针
+      this.drawNeedle(contextIndex + 1, colorType);
+    }
+  };
+
+
+  // draw text arc 绘制文本挡位圆弧
+  this.drawStringGearArc = function (contextIndex, textIndex, text) {
+    if (contextIndex + 2 < this.contexts.length) {
+      // draw blue base arc 绘制圆弧
+      this.drawFillArc(contextIndex, 'blue');
+      // draw text and line 绘制部分文本和线段
+      this.drawLongTextLine(contextIndex, textIndex);
+      // draw needle 绘制指针
+      this.drawNeedle(contextIndex + 1, 'blue');
+      // draw the target gear text 绘制当前所在的挡位
+      this.drawTargetText(contextIndex + 2, textIndex, true, true);
+    }
+  };
+
+
+}这是 源码，改成微信小程序可以使用的代码
+
+
+
+
+我来帮你将这个 DrawArc 类从 HTML 的 Canvas 环境转换为微信小程序可用的代码。微信小程序使用 wx.createCanvasContext 来操作 canvas，且没有 DOM 操作（如 document.getElementById），因此需要做以下调整：
+
+移除 DOM 操作: 用小程序的 wx.createSelectorQuery 获取 canvas 尺寸。
+替换上下文获取: 使用 wx.createCanvasContext 替代 canvas.getContext('2d')。
+单位调整: 将 rem 转换为 rpx。
+移除不支持的特性: 如 localStorage 和 DOM 元素创建，改为通过小程序的数据绑定实现。
+适配绘制逻辑: 确保绘图方法适配小程序的 canvas API。
+以下是改写后的 DrawArc 类，适用于你的 arcUtil.js：
+
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+// utils/arcUtil.js 中的 DrawArc 类
+class DrawArc {
+  constructor(slideName, isArc = false) {
+    // 初始化变量
+    this.contexts = []; // 存储 canvas 上下文
+    this.textArray = []; // 挡位文本数组
+    this.textArrayDescribe = []; // 挡位描述数组
+    this.slideName = slideName; // 用于标识容器
+    this.unit = 100; // 默认单位（rpx），小程序中通过实际设置调整
+    this.canvasWidth = 0; // 画布宽度，稍后通过查询获取
+    this.angleInterval = Math.PI * 8 / 180; // 线段间隔弧度
+    this.arcX = 0; // 圆心 x 坐标
+    this.arcY = 0; // 圆心 y 坐标
+    this.arcRadius = 0; // 圆弧半径
+    this.initStartAngle = Math.PI / 2; // 初始开始弧度
+    this.initEndAngle = Math.PI * 2 + Math.PI / 2; // 初始结束弧度
+    this.arcAngle = Math.PI * 2; // 整个圆弧弧度
+
+    // 如果是弧形，调整参数
+    if (isArc) {
+      this.arcY = this.unit * 4; // 默认值，稍后根据宽度调整
+      this.initStartAngle = 232 * Math.PI / 180;
+      this.initEndAngle = 308 * Math.PI / 180;
+    }
+  }
+
+  // 添加 canvas 上下文
+  addContext(canvasId, zIndex) {
+    const ctx = wx.createCanvasContext(canvasId);
+    this.contexts.push({ id: canvasId, ctx, zIndex });
+  }
+
+  // 设置画布尺寸（需要在页面加载时调用）
+  initCanvasSize(callback) {
+    const query = wx.createSelectorQuery();
+    query.select(`#${this.slideName}`).boundingClientRect((res) => {
+      if (res) {
+        this.canvasWidth = res.width;
+        this.arcX = this.canvasWidth / 2;
+        this.arcY = this.isArc ? this.arcX + 4 * this.unit : this.arcX;
+        this.arcRadius = this.arcX - 0.1 * this.unit;
+        if (this.isArc) {
+          this.arcRadius = this.arcX + 1.5 * this.unit;
+        }
+        callback && callback();
+      }
+    }).exec();
+  }
+
+  // 设置文本数组
+  setTextArray(textArray, textArrayDescribe) {
+    this.textArray = textArray;
+    this.textArrayDescribe = textArrayDescribe || [];
+    const halfArcAngle = (textArray.length - 1) * this.angleInterval;
+    this.arcAngle = halfArcAngle * 2;
+  }
+
+  // 绘制基础圆弧
+  drawBaseArc(contextIndex, colorType, startAngle, endAngle, needClear = true) {
+    if (contextIndex >= 0 && contextIndex < this.contexts.length) {
+      const { ctx } = this.contexts[contextIndex];
+      if (needClear) {
+        ctx.clearRect(0, 0, this.canvasWidth, this.canvasWidth);
+      }
+      ctx.beginPath();
+
+      if (colorType.indexOf('ro-') !== -1) {
+        ctx.setLineWidth(0.04 * this.unit);
+        ctx.setStrokeStyle({
+          'ro-grey': '#444D50',
+          'ro-white': 'white',
+          'ro-red': '#F74C2F'
+        }[colorType] || '#444D50');
+      } else {
+        ctx.setLineWidth(0.06 * this.unit);
+        const grad = ctx.createLinearGradient(0, 0, this.canvasWidth, 0);
+        const colorMap = {
+          'blue': [['0', '#2a54B7'], ['1', '#50cfd1']],
+          'onlyBlue': [['0', 'rgba(0,205,212,0.1)'], ['1', 'rgba(0,205,212,0.1)']],
+          'red': [['0', '#6ACBB3'], ['0.3', '#CF7A4B'], ['1', '#EC652F']],
+          '#fff': [['0', '#fff'], ['1', '#4ee5ec']],
+          '#4ee5ec': [['0', '#4ee5ec'], ['1', '#ffdb0b']],
+          '#ffdb0b': [['0', '#ffdb0b'], ['1', '#ff0303']],
+          '#ff0303': [['0', '#ffdb0b'], ['1', '#ff0303']],
+          'karing-tempe-0': [['0', '#000'], ['0.2', '#000'], ['0.5', '#00CDD4'], ['1', '#6787FF']],
+          'karing-tempe-1': [['0', '#00CDD4'], ['0.5', '#4D9DFF'], ['1', '#A64DFF']],
+          // 其他颜色映射...
+          'default': [['0', '#1B1F20'], ['0.3', '#2F3537'], ['1', '#444D50']]
+        };
+        (colorMap[colorType] || colorMap['default']).forEach(([pos, color]) => grad.addColorStop(parseFloat(pos), color));
+        ctx.setStrokeStyle(grad);
+      }
+
+      ctx.arc(this.arcX, this.arcY, this.arcRadius, startAngle, endAngle, false);
+      ctx.stroke();
+      ctx.closePath();
+      ctx.draw();
+    }
+  }
+
+  // 绘制填充圆弧
+  drawFillArc(contextIndex, colorType) {
+    this.drawBaseArc(contextIndex, colorType, this.initStartAngle, this.initEndAngle);
+  }
+
+  // 根据百分比绘制圆弧
+  drawPercentArc(contextIndex, colorType, percentValue) {
+    if (percentValue >= 0 && percentValue <= 100) {
+      const endAngle = this.initStartAngle + (percentValue / 100) * this.arcAngle;
+      this.drawBaseArc(contextIndex, colorType, this.initStartAngle, endAngle);
+    }
+  }
+
+  // 绘制半色圆弧
+  drawHalfArc(contextIndex, arcValue) {
+    if (arcValue >= 1.5 * Math.PI || arcValue <= this.initEndAngle) {
+      this.drawBaseArc(contextIndex, 'blue', this.initStartAngle, 1.5 * Math.PI);
+      this.drawBaseArc(contextIndex, 'red', 1.5 * Math.PI, arcValue, false);
+    } else {
+      this.drawBaseArc(contextIndex, 'blue', this.initStartAngle, arcValue);
+    }
+  }
+
+  // 绘制指针
+  drawNeedle(contextIndex, colorType) {
+    const { ctx } = this.contexts[contextIndex];
+    ctx.setTextAlign('center');
+    ctx.setTextBaseline('middle');
+    ctx.clearRect(0, 0, this.canvasWidth, this.canvasWidth);
+    ctx.beginPath();
+
+    const x = this.arcX;
+    const y = this.arcY - this.arcRadius - 0.2 * this.unit;
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - 0.05 * this.unit, y + 1.05 * this.unit);
+    ctx.lineTo(x + 0.05 * this.unit, y + 1.05 * this.unit);
+    ctx.setFillStyle('#fff');
+    ctx.fill();
+    ctx.closePath();
+
+    const colorMap = {
+      'blue': '#00CDD4',
+      'red': '#EC652F',
+      '#fff': '#fff',
+      '#4ee5ec': '#4ee5ec',
+      // 其他颜色...
+      'default': '#00CDD4'
+    };
+    ctx.setFillStyle(colorMap[colorType] || colorMap['default']);
+    ctx.fillRect(this.arcX - 0.015 * this.unit, y - 0.83 * this.unit, 0.03 * this.unit, 0.7 * this.unit);
+    ctx.draw();
+  }
+
+  // 绘制单条线和文本
+  drawSingleLine(ctx, angle, lineColor, text, direction) {
+    ctx.save();
+    ctx.translate(this.arcX - Math.cos(angle) * this.arcRadius, this.arcY - Math.sin(angle) * this.arcRadius);
+    if (text !== undefined) {
+      ctx.setFontSize(0.3 * this.unit);
+      ctx.setFillStyle('#565656');
+      ctx.fillText(text, direction === 'left' ? -0.25 * this.unit : 0.25 * this.unit, -0.9 * this.unit);
+    }
+    ctx.rotate(angle - Math.PI / 2);
+    ctx.setFillStyle(lineColor);
+    if (text !== undefined) {
+      ctx.setFontSize(0.2 * this.unit);
+      ctx.fillText('|', 0, -0.5 * this.unit);
+    }
+    ctx.restore();
+    ctx.draw();
+  }
+
+  // 绘制文本和线段
+  drawTextLine(contextIndex, textIndex) {
+    const { ctx } = this.contexts[contextIndex];
+    ctx.setTextAlign('center');
+    ctx.setTextBaseline('middle');
+    let angle = Math.PI / 2;
+
+    if (textIndex - 1 >= 0) {
+      angle -= this.angleInterval;
+      this.drawSingleLine(ctx, angle, '#CBCBCB');
+      angle -= this.angleInterval;
+      this.drawSingleLine(ctx, angle, '#A1A1A1', this.textArray[textIndex - 1], 'left');
+    }
+    // 其他逻辑类似，逐一实现
+    ctx.draw();
+  }
+
+  // 绘制目标文本（小程序中通过数据绑定实现）
+  drawTargetText(contextIndex, textIndex, isString, isText, page) {
+    if (contextIndex < this.contexts.length && textIndex < this.textArray.length && textIndex >= 0) {
+      const text = this.textArray[textIndex];
+      const describe = this.textArrayDescribe[textIndex] || '';
+      page.setData({
+        currentText: text,
+        currentDescribe: describe
+      });
+    }
+  }
+
+  // 其他方法类似调整，此处省略完整实现
+  drawGearArc(contextIndex, textIndex, isHalf, typeCode) {
+    if (contextIndex + 2 < this.contexts.length) {
+      let colorType = 'blue';
+      if (isHalf && textIndex > this.textArray.length / 2) colorType = 'red';
+      if (typeCode) colorType = `${typeCode}-${textIndex}`;
+      this.drawFillArc(contextIndex, colorType);
+      this.drawTextLine(contextIndex, textIndex);
+      this.drawNeedle(contextIndex + 1, colorType);
+      this.drawTargetText(contextIndex + 2, textIndex);
+    }
+  }
+
+  // ... 其他方法类似调整
+}
+
+module.exports = { DrawArc }; // 导出类
+使用方式
+在小程序页面中：
+
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+// pages/index/index.js
+const { DrawArc } = require('../../utils/arcUtil');
+
+Page({
+  data: {
+    slideItem: {
+      slideName: 'slide1',
+      canvas: ['canvas1', 'canvas2', 'canvas3'],
+      gearArray: ['1', '2', '3', '4'],
+      gearIndex: 0,
+      type: 'gear'
+    },
+    currentText: '',
+    currentDescribe: ''
+  },
+
+  onLoad() {
+    const drawArc = new DrawArc(this.data.slideItem.slideName);
+    this.data.slideItem.canvas.forEach((id, index) => drawArc.addContext(id, index + 1));
+    drawArc.initCanvasSize(() => {
+      drawArc.setTextArray(this.data.slideItem.gearArray);
+      drawArc.drawGearArc(0, this.data.slideItem.gearIndex, false, null, this);
+    });
+    this.drawArc = drawArc;
+  }
+});
+html
+
+Collapse
+
+Wrap
+
+Copy
+<!-- pages/index/index.wxml -->
+<view id="{{slideItem.slideName}}" class="status-canvas">
+  <canvas canvas-id="canvas1" class="canvas"></canvas>
+  <canvas canvas-id="canvas2" class="canvas"></canvas>
+  <canvas canvas-id="canvas3" class="canvas"></canvas>
+  <view class="preset-value">
+    <text class="describe-value">{{currentDescribe}}</text>
+    <text class="value-in">{{currentText}}</text>
+  </view>
+</view>
+css
+
+Collapse
+
+Wrap
+
+Copy
+/* pages/index/index.wxss */
+.status-canvas {
+  width: 100%;
+  height: 420rpx;
+  position: relative;
+}
+
+.canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 420rpx;
+}
+
+.preset-value {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.value-in {
+  font-size: 94rpx;
+  color: white;
+}
+
+.describe-value {
+  font-size: 22rpx;
+  color: white;
+}
+调整说明
+尺寸初始化: 使用 wx.createSelectorQuery 获取容器宽度，替代 document.getElementById。
+上下文: 使用 wx.createCanvasContext，并在每次绘制后调用 draw()。
+文本显示: 原代码中通过 DOM 操作显示文本，在小程序中改为通过 setData 更新页面数据。
+单位: 默认使用 rpx，你需要根据设计稿调整 this.unit 的值。
+未完全实现: 部分方法（如 drawTextLine 的完整逻辑）需要根据需求补充。
+如果需要更详细的实现或有其他问题，请告诉我！
+
+
+
+
+
+
+
+我需要完整的实现 DrawArc 这个类
+
+
+
+
+下面是完整的 DrawArc 类实现，已适配微信小程序环境。我将保留原始功能，并根据小程序的特点进行调整。以下代码包含所有方法，确保逻辑完整且能在小程序中运行：
+
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+// utils/arcUtil.js 中的 DrawArc 类
+class DrawArc {
+  constructor(slideName, isArc = false) {
+    this.contexts = []; // 存储 canvas 上下文
+    this.textArray = []; // 挡位文本数组
+    this.textArrayDescribe = []; // 挡位描述数组
+    this.slideName = slideName; // 用于标识容器
+    this.unit = 100; // 默认单位（rpx），可在初始化时调整
+    this.canvasWidth = 0; // 画布宽度
+    this.canvasHeight = 0; // 画布高度
+    this.angleInterval = Math.PI * 8 / 180; // 线段间隔弧度
+    this.arcX = 0; // 圆心 x 坐标
+    this.arcY = 0; // 圆心 y 坐标
+    this.arcRadius = 0; // 圆弧半径
+    this.initStartAngle = Math.PI / 2; // 初始开始弧度
+    this.initEndAngle = Math.PI * 2 + Math.PI / 2; // 初始结束弧度
+    this.arcAngle = Math.PI * 2; // 整个圆弧弧度
+    this.isArc = isArc; // 是否为弧形
+
+    if (isArc) {
+      this.initStartAngle = 232 * Math.PI / 180;
+      this.initEndAngle = 308 * Math.PI / 180;
+    }
+  }
+
+  // 添加 canvas 上下文
+  addContext(canvasId, zIndex) {
+    const ctx = wx.createCanvasContext(canvasId);
+    this.contexts.push({ id: canvasId, ctx, zIndex });
+  }
+
+  // 初始化画布尺寸
+  initCanvasSize(callback) {
+    const query = wx.createSelectorQuery();
+    query.select(`#${this.slideName}`).boundingClientRect((res) => {
+      if (res) {
+        this.canvasWidth = res.width;
+        this.arcX = this.canvasWidth / 2;
+        this.arcY = this.isArc ? this.arcX + 4 * this.unit : this.arcX;
+        this.arcRadius = this.arcX - 0.1 * this.unit;
+        if (this.isArc) {
+          this.arcRadius = this.arcX + 1.5 * this.unit;
+          this.canvasHeight = 2 * this.unit + (1 - Math.cos(52 * Math.PI / 180)) * this.arcRadius;
+        } else {
+          this.canvasHeight = this.canvasWidth;
+        }
+        callback && callback();
+      }
+    }).exec();
+  }
+
+  // 设置文本数组
+  setTextArray(textArray, textArrayDescribe) {
+    this.textArray = textArray;
+    this.textArrayDescribe = textArrayDescribe || [];
+    const halfArcAngle = (textArray.length - 1) * this.angleInterval;
+    this.arcAngle = halfArcAngle * 2;
+  }
+
+  // 绘制基础圆弧
+  drawBaseArc(contextIndex, colorType, startAngle, endAngle, needClear = true) {
+    if (contextIndex >= 0 && contextIndex < this.contexts.length) {
+      const { ctx } = this.contexts[contextIndex];
+      if (needClear) {
+        ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+      }
+      ctx.beginPath();
+
+      if (colorType.indexOf('ro-') !== -1) {
+        ctx.setLineWidth(0.04 * this.unit);
+        ctx.setStrokeStyle({
+          'ro-grey': '#444D50',
+          'ro-white': 'white',
+          'ro-red': '#F74C2F'
+        }[colorType] || '#444D50');
+      } else {
+        ctx.setLineWidth(0.06 * this.unit);
+        const grad = ctx.createLinearGradient(0, 0, this.canvasWidth, 0);
+        const colorMap = {
+          'blue': [['0', '#2a54B7'], ['1', '#50cfd1']],
+          'onlyBlue': [['0', 'rgba(0,205,212,0.1)'], ['1', 'rgba(0,205,212,0.1)']],
+          'red': [['0', '#6ACBB3'], ['0.3', '#CF7A4B'], ['1', '#EC652F']],
+          '#fff': [['0', '#fff'], ['1', '#4ee5ec']],
+          '#4ee5ec': [['0', '#4ee5ec'], ['1', '#ffdb0b']],
+          '#ffdb0b': [['0', '#ffdb0b'], ['1', '#ff0303']],
+          '#ff0303': [['0', '#ffdb0b'], ['1', '#ff0303']],
+          'karing-tempe-0': [['0', '#000'], ['0.2', '#000'], ['0.5', '#00CDD4'], ['1', '#6787FF']],
+          'karing-tempe-1': [['0', '#00CDD4'], ['0.5', '#4D9DFF'], ['1', '#A64DFF']],
+          'karing-tempe-2': [['0', '#00CDD4'], ['0.5', '#6787FF'], ['1', '#C144BA']],
+          'karing-tempe-3': [['0', '#4D9DFF'], ['0.5', '#A64DFF'], ['1', '#F53131']],
+          'karing-tempe-4': [['0', '#6787FF'], ['0.5', '#C144BA'], ['1', '#F53131']],
+          'karing-tempe-5': [['0', '#A64DFF'], ['0.5', '#F53131'], ['0.8', '#000'], ['1', '#000']],
+          'karing-gage-0': [['0', '#000'], ['0.2', '#000'], ['0.5', '#00CDD4'], ['1', '#45A2FB']],
+          'karing-gage-1': [['0', '#00CDD4'], ['0.5', '#00CDD4'], ['1', '#4D9DFF']],
+          'karing-gage-2': [['0', '#00CDD4'], ['0.5', '#45A2FB'], ['1', '#4D9DFF']],
+          'karing-gage-3': [['0', '#00CDD4'], ['0.7', '#45A2FB'], ['0.5', '#4D9DFF'], ['1', '#4D9DFF']],
+          'karing-gage-4': [['0', '#45A2FB'], ['0.5', '#4D9DFF'], ['0.8', '#000'], ['1', '#000']],
+          'default': [['0', '#1B1F20'], ['0.3', '#2F3537'], ['1', '#444D50']]
+        };
+        (colorMap[colorType] || colorMap['default']).forEach(([pos, color]) => grad.addColorStop(parseFloat(pos), color));
+        ctx.setStrokeStyle(grad);
+      }
+
+      ctx.arc(this.arcX, this.arcY, this.arcRadius, startAngle, endAngle, false);
+      ctx.stroke();
+      ctx.closePath();
+      ctx.draw();
+    }
+  }
+
+  // 绘制填充圆弧
+  drawFillArc(contextIndex, colorType) {
+    this.drawBaseArc(contextIndex, colorType, this.initStartAngle, this.initEndAngle);
+  }
+
+  // 根据百分比绘制圆弧
+  drawPercentArc(contextIndex, colorType, percentValue) {
+    if (percentValue >= 0 && percentValue <= 100) {
+      const endAngle = this.initStartAngle + (percentValue / 100) * this.arcAngle;
+      this.drawBaseArc(contextIndex, colorType, this.initStartAngle, endAngle);
+    }
+  }
+
+  // 绘制半色圆弧
+  drawHalfArc(contextIndex, arcValue) {
+    if (arcValue >= 1.5 * Math.PI || arcValue <= this.initEndAngle) {
+      this.drawBaseArc(contextIndex, 'blue', this.initStartAngle, 1.5 * Math.PI);
+      this.drawBaseArc(contextIndex, 'red', 1.5 * Math.PI, arcValue, false);
+    } else {
+      this.drawBaseArc(contextIndex, 'blue', this.initStartAngle, arcValue);
+    }
+  }
+
+  // 绘制指针
+  drawNeedle(contextIndex, colorType) {
+    if (contextIndex >= 0 && contextIndex < this.contexts.length) {
+      const { ctx } = this.contexts[contextIndex];
+      ctx.setTextAlign('center');
+      ctx.setTextBaseline('middle');
+      ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+      ctx.beginPath();
+
+      const x = this.arcX;
+      const y = this.arcY - this.arcRadius - 0.2 * this.unit;
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 0.05 * this.unit, y + 1.05 * this.unit);
+      ctx.lineTo(x + 0.05 * this.unit, y + 1.05 * this.unit);
+      ctx.setFillStyle('#fff');
+      ctx.fill();
+      ctx.closePath();
+
+      const colorMap = {
+        'blue': '#00CDD4',
+        'red': '#EC652F',
+        '#fff': '#fff',
+        '#4ee5ec': '#4ee5ec',
+        '#ffdb0b': '#ffdb0b',
+        '#ff0303': '#ff0303',
+        'karing-tempe-0': '#00CDD4',
+        'karing-tempe-1': '#4D9DFF',
+        'karing-tempe-2': '#6787FF',
+        'karing-tempe-3': '#A64DFF',
+        'karing-tempe-4': '#C144BA',
+        'karing-tempe-5': '#F53131',
+        'karing-gage-0': '#00CDD4',
+        'karing-gage-1': '#00CDD4',
+        'karing-gage-2': '#45A2FB',
+        'karing-gage-3': '#4D9DFF',
+        'karing-gage-4': '#4D9DFF',
+        'default': '#00CDD4'
+      };
+      ctx.setFillStyle(colorMap[colorType] || colorMap['default']);
+      ctx.fillRect(this.arcX - 0.015 * this.unit, y - 0.83 * this.unit, 0.03 * this.unit, 0.7 * this.unit);
+      ctx.draw();
+    }
+  }
+
+  // 绘制单条线和文本
+  drawSingleLine(ctx, angle, lineColor, text, direction) {
+    ctx.save();
+    ctx.translate(this.arcX - Math.cos(angle) * this.arcRadius, this.arcY - Math.sin(angle) * this.arcRadius);
+    if (text !== undefined) {
+      ctx.setFontSize(0.3 * this.unit);
+      ctx.setFillStyle('#565656');
+      ctx.fillText(text, direction === 'left' ? -0.25 * this.unit : 0.25 * this.unit, -0.9 * this.unit);
+    }
+    ctx.rotate(angle - Math.PI / 2);
+    ctx.setFillStyle(lineColor);
+    if (text !== undefined) {
+      ctx.setFontSize(0.2 * this.unit);
+      ctx.fillText('|', 0, -0.5 * this.unit);
+    }
+    ctx.restore();
+  }
+
+  // 绘制所有文本和线段（数字挡位）
+  drawTextLine(contextIndex, textIndex) {
+    if (contextIndex >= 0 && contextIndex < this.contexts.length) {
+      const { ctx } = this.contexts[contextIndex];
+      ctx.setTextAlign('center');
+      ctx.setTextBaseline('middle');
+      let angle = Math.PI / 2;
+
+      // 绘制左边
+      if (textIndex - 1 >= 0) {
+        angle -= this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#CBCBCB');
+        angle -= this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#A1A1A1', this.textArray[textIndex - 1], 'left');
+      }
+      if (textIndex - 2 >= 0) {
+        angle -= this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#989898');
+        angle -= this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#818181', '');
+      }
+
+      // 重置角度
+      angle = Math.PI / 2;
+
+      // 绘制右边
+      if (textIndex + 1 < this.textArray.length) {
+        angle += this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#CBCBCB');
+        angle += this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#A1A1A1', this.textArray[textIndex + 1], 'right');
+      }
+      if (textIndex + 2 < this.textArray.length) {
+        angle += this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#989898');
+        angle += this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#818181', '');
+      }
+      ctx.draw();
+    }
+  }
+
+  // 绘制长文本和线段（文本挡位）
+  drawLongTextLine(contextIndex, textIndex) {
+    if (contextIndex >= 0 && contextIndex < this.contexts.length) {
+      const { ctx } = this.contexts[contextIndex];
+      ctx.setTextAlign('center');
+      ctx.setTextBaseline('middle');
+      let angle = Math.PI / 2;
+
+      // 绘制左边
+      if (textIndex - 1 >= 0) {
+        angle -= this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#CBCBCB');
+        angle -= this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#A1A1A1');
+        angle -= this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#989898', this.textArray[textIndex - 1], 'left');
+      }
+      if (textIndex - 2 >= 0) {
+        angle -= this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#818181');
+      }
+
+      // 重置角度
+      angle = Math.PI / 2;
+
+      // 绘制右边
+      if (textIndex + 1 < this.textArray.length) {
+        angle += this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#CBCBCB');
+        angle += this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#A1A1A1');
+        angle += this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#989898', this.textArray[textIndex + 1], 'right');
+      }
+      if (textIndex + 2 < this.textArray.length) {
+        angle += this.angleInterval;
+        this.drawSingleLine(ctx, angle, '#818181');
+      }
+      ctx.draw();
+    }
+  }
+
+  // 绘制当前挡位文本（通过页面数据绑定实现）
+  drawTargetText(contextIndex, textIndex, isString = false, isText = false, page) {
+    if (contextIndex < this.contexts.length && textIndex < this.textArray.length && textIndex >= 0) {
+      const text = this.textArray[textIndex];
+      const describe = this.textArrayDescribe[textIndex] || '';
+      const isZh = wx.getStorageSync('language') === 'zh_CN' && isText;
+      page.setData({
+        currentText: text,
+        currentDescribe: describe,
+        textStyle: {
+          fontSize: isZh ? (isString ? 84 : 125) : (isString ? 94 : 125),
+          lineHeight: isZh ? 84 : (isString ? 97 : 125),
+          fontFamily: isZh ? 'PingFangSC-Light' : 'HelveticaNeueLTPro-Lt'
+        },
+        describeStyle: {
+          fontSize: isString ? 22 : 31.25,
+          lineHeight: isZh ? 24 : (isString ? 28 : 35),
+          fontFamily: isZh ? 'PingFangSC-Light' : 'HelveticaNeueLTPro-Lt'
+        }
+      });
+    }
+  }
+
+  // 绘制预设目标文本（直接在 canvas 上绘制）
+  drawPresetTargetText(contextIndex, textIndex, isString = false) {
+    if (contextIndex < this.contexts.length && textIndex < this.textArray.length && textIndex >= 0) {
+      const { ctx } = this.contexts[contextIndex];
+      ctx.setTextAlign('center');
+      ctx.setTextBaseline('middle');
+      ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+      ctx.setFillStyle('white');
+      ctx.setFontSize(isString ? 0.94 * this.unit : 1.2 * this.unit);
+      const isZh = wx.getStorageSync('language') === 'zh_CN';
+      if (isZh) {
+        ctx.font = `${isString ? 0.94 : 1.2} * ${this.unit}px PingFangSC-Light,Microsoft Yahei`;
+      }
+      ctx.fillText(this.textArray[textIndex], this.arcX, this.arcY - this.arcRadius - 1.76 * this.unit);
+      ctx.draw();
+    }
+  }
+
+  // 绘制数字挡位圆弧
+  drawGearArc(contextIndex, textIndex, isHalf = false, typeCode = null, page) {
+    if (contextIndex + 2 < this.contexts.length) {
+      let colorType = 'blue';
+      if (isHalf && textIndex > this.textArray.length / 2) colorType = 'red';
+      if (typeCode) colorType = `${typeCode}-${textIndex}`;
+
+      this.drawFillArc(contextIndex, colorType);
+      this.drawTextLine(contextIndex, textIndex);
+      this.drawNeedle(contextIndex + 1, colorType);
+      this.drawTargetText(contextIndex + 2, textIndex, false, false, page);
+    }
+  }
+
+  // 绘制蓝色圆弧
+  drawBlueGearArc(contextIndex) {
+    this.drawFillArc(contextIndex, 'onlyBlue');
+  }
+
+  // 绘制预设数字挡位圆弧
+  drawPresetGearArc(contextIndex, textIndex, isHalf = false) {
+    if (contextIndex + 2 < this.contexts.length) {
+      let colorType = 'blue';
+      if (isHalf && textIndex > this.textArray.length / 2) colorType = 'red';
+
+      this.drawFillArc(contextIndex, colorType);
+      this.drawTextLine(contextIndex, textIndex);
+      this.drawNeedle(contextIndex + 1, colorType);
+    }
+  }
+
+  // 绘制四色预设圆弧
+  drawPresetFourArc(contextIndex, textIndex) {
+    if (contextIndex + 2 < this.contexts.length) {
+      let colorType = '#fff';
+      if (textIndex > this.textArray.length / 4 && textIndex < this.textArray.length / 2) colorType = '#4ee5ec';
+      if (textIndex > this.textArray.length / 2 && textIndex < this.textArray.length / 4 * 3) colorType = '#ffdb0b';
+      if (textIndex > this.textArray.length / 4 * 3) colorType = '#ff0303';
+
+      this.drawFillArc(contextIndex, colorType);
+      this.drawTextLine(contextIndex, textIndex);
+      this.drawNeedle(contextIndex + 1, colorType);
+    }
+  }
+
+  // 绘制文本挡位圆弧
+  drawStringGearArc(contextIndex, textIndex, page) {
+    if (contextIndex + 2 < this.contexts.length) {
+      this.drawFillArc(contextIndex, 'blue');
+      this.drawLongTextLine(contextIndex, textIndex);
+      this.drawNeedle(contextIndex + 1, 'blue');
+      this.drawTargetText(contextIndex + 2, textIndex, true, true, page);
+    }
+  }
+}
+
+module.exports = { DrawArc };
+使用示例
+WXML
+html
+
+Collapse
+
+Wrap
+
+Copy
+<view id="{{slideItem.slideName}}" class="status-canvas">
+  <canvas canvas-id="canvas1" class="canvas"></canvas>
+  <canvas canvas-id="canvas2" class="canvas"></canvas>
+  <canvas canvas-id="canvas3" class="canvas"></canvas>
+  <view class="preset-value">
+    <text class="describe-value" style="font-size: {{describeStyle.fontSize}}rpx; line-height: {{describeStyle.lineHeight}}rpx; font-family: {{describeStyle.fontFamily}}">{{currentDescribe}}</text>
+    <text class="value-in" style="font-size: {{textStyle.fontSize}}rpx; line-height: {{textStyle.lineHeight}}rpx; font-family: {{textStyle.fontFamily}}">{{currentText}}</text>
+  </view>
+</view>
+WXSS
+css
+
+Collapse
+
+Wrap
+
+Copy
+.status-canvas {
+  width: 100%;
+  height: 420rpx;
+  position: relative;
+}
+
+.canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 420rpx;
+}
+
+.preset-value {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.value-in {
+  color: white;
+}
+
+.describe-value {
+  color: white;
+}
+JS
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+// pages/index/index.js
+const { DrawArc } = require('../../utils/arcUtil');
+
+Page({
+  data: {
+    slideItem: {
+      slideName: 'slide1',
+      canvas: ['canvas1', 'canvas2', 'canvas3'],
+      gearArray: ['1', '2', '3', '4'],
+      gearIndex: 0,
+      type: 'gear'
+    },
+    currentText: '',
+    currentDescribe: '',
+    textStyle: {},
+    describeStyle: {}
+  },
+
+  onLoad() {
+    const drawArc = new DrawArc(this.data.slideItem.slideName);
+    this.data.slideItem.canvas.forEach((id, index) => drawArc.addContext(id, index + 1));
+    drawArc.initCanvasSize(() => {
+      drawArc.setTextArray(this.data.slideItem.gearArray, ['Desc1', 'Desc2', 'Desc3', 'Desc4']);
+      drawArc.drawGearArc(0, this.data.slideItem.gearIndex, false, null, this);
+    });
+    this.drawArc = drawArc;
+  }
+});
+实现说明
+完整性: 所有方法都已实现，保留了原始逻辑。
+小程序适配:
+使用 wx.createCanvasContext 和 ctx.draw()。
+文本显示通过 setData 更新页面数据。
+尺寸通过 wx.createSelectorQuery 获取。
+单位: 默认 this.unit = 100（rpx），可根据设计稿调整。
+语言处理: 使用 wx.getStorageSync('language') 替代 localStorage。
+样式动态化: 文本样式通过数据绑定实现，替代 DOM 操作。
+如果需要测试或有特定需求（比如调整颜色、字体），请告诉我，我可以进一步优化！
+
+
+
+
+
+
+
+小程序中可以获取当前的page吗
+
+
+
+
+在微信小程序中，可以通过一些方法获取当前的 Page 对象，但具体实现取决于上下文和需求。以下是几种常见的方式，以及如何在你的 DrawArc 类中应用它们：
+
+1. 通过 getCurrentPages() 获取当前页面
+微信小程序提供了 getCurrentPages() API，可以获取当前的页面栈，返回一个数组，数组最后一项就是当前页面。
+
+示例代码
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+// 获取当前页面
+const pages = getCurrentPages();
+const currentPage = pages[pages.length - 1];
+console.log(currentPage); // 当前 Page 对象
+在 DrawArc 中使用
+如果你的 DrawArc 类需要在某些方法中访问当前页面（例如 drawTargetText 需要调用 setData），可以直接使用 getCurrentPages()：
+
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+drawTargetText(contextIndex, textIndex, isString = false, isText = false) {
+  if (contextIndex < this.contexts.length && textIndex < this.textArray.length && textIndex >= 0) {
+    const text = this.textArray[textIndex];
+    const describe = this.textArrayDescribe[textIndex] || '';
+    const isZh = wx.getStorageSync('language') === 'zh_CN' && isText;
+    const pages = getCurrentPages();
+    const currentPage = pages[pages.length - 1];
+    currentPage.setData({
+      currentText: text,
+      currentDescribe: describe,
+      textStyle: {
+        fontSize: isZh ? (isString ? 84 : 125) : (isString ? 94 : 125),
+        lineHeight: isZh ? 84 : (isString ? 97 : 125),
+        fontFamily: isZh ? 'PingFangSC-Light' : 'HelveticaNeueLTPro-Lt'
+      },
+      describeStyle: {
+        fontSize: isString ? 22 : 31.25,
+        lineHeight: isZh ? 24 : (isString ? 28 : 35),
+        fontFamily: isZh ? 'PingFangSC-Light' : 'HelveticaNeueLTPro-Lt'
+      }
+    });
+  }
+}
+注意事项
+getCurrentPages() 是全局方法，任何地方都可以调用。
+如果小程序处于页面切换过程中（比如刚跳转页面），页面栈可能不稳定，建议在确保页面加载完成后再调用（如 onLoad 或 onReady 中初始化）。
+2. 在类初始化时传入 Page 对象
+更推荐的做法是将当前 Page 对象作为参数传递给 DrawArc 的构造函数或特定方法，这样可以明确指定哪个页面使用该实例，避免依赖全局状态。
+
+修改构造函数
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+class DrawArc {
+  constructor(slideName, isArc = false, page) {
+    this.page = page; // 保存 Page 对象
+    this.contexts = [];
+    this.textArray = [];
+    this.textArrayDescribe = [];
+    this.slideName = slideName;
+    this.unit = 100;
+    // ... 其他初始化代码
+  }
+
+  drawTargetText(contextIndex, textIndex, isString = false, isText = false) {
+    if (contextIndex < this.contexts.length && textIndex < this.textArray.length && textIndex >= 0) {
+      const text = this.textArray[textIndex];
+      const describe = this.textArrayDescribe[textIndex] || '';
+      const isZh = wx.getStorageSync('language') === 'zh_CN' && isText;
+      this.page.setData({
+        currentText: text,
+        currentDescribe: describe,
+        textStyle: {
+          fontSize: isZh ? (isString ? 84 : 125) : (isString ? 94 : 125),
+          lineHeight: isZh ? 84 : (isString ? 97 : 125),
+          fontFamily: isZh ? 'PingFangSC-Light' : 'HelveticaNeueLTPro-Lt'
+        },
+        describeStyle: {
+          fontSize: isString ? 22 : 31.25,
+          lineHeight: isZh ? 24 : (isString ? 28 : 35),
+          fontFamily: isZh ? 'PingFangSC-Light' : 'HelveticaNeueLTPro-Lt'
+        }
+      });
+    }
+  }
+
+  // 修改需要 page 的方法，例如 drawGearArc
+  drawGearArc(contextIndex, textIndex, isHalf = false, typeCode = null) {
+    if (contextIndex + 2 < this.contexts.length) {
+      let colorType = 'blue';
+      if (isHalf && textIndex > this.textArray.length / 2) colorType = 'red';
+      if (typeCode) colorType = `${typeCode}-${textIndex}`;
+      this.drawFillArc(contextIndex, colorType);
+      this.drawTextLine(contextIndex, textIndex);
+      this.drawNeedle(contextIndex + 1, colorType);
+      this.drawTargetText(contextIndex + 2, textIndex);
+    }
+  }
+
+  // ... 其他方法
+}
+使用方式
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+// pages/index/index.js
+const { DrawArc } = require('../../utils/arcUtil');
+
+Page({
+  data: {
+    slideItem: {
+      slideName: 'slide1',
+      canvas: ['canvas1', 'canvas2', 'canvas3'],
+      gearArray: ['1', '2', '3', '4'],
+      gearIndex: 0,
+      type: 'gear'
+    },
+    currentText: '',
+    currentDescribe: '',
+    textStyle: {},
+    describeStyle: {}
+  },
+
+  onLoad() {
+    const drawArc = new DrawArc(this.data.slideItem.slideName, false, this); // 传入当前 Page
+    this.data.slideItem.canvas.forEach((id, index) => drawArc.addContext(id, index + 1));
+    drawArc.initCanvasSize(() => {
+      drawArc.setTextArray(this.data.slideItem.gearArray, ['Desc1', 'Desc2', 'Desc3', 'Desc4']);
+      drawArc.drawGearArc(0, this.data.slideItem.gearIndex);
+    });
+    this.drawArc = drawArc;
+  }
+});
+优点
+明确指定了 Page 对象，避免全局方法的不确定性。
+更符合模块化设计，易于维护和测试。
+3. 通过方法参数传递 Page
+如果你不希望在构造函数中绑定 Page，可以在需要使用 Page 的方法中单独传递：
+
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+drawTargetText(contextIndex, textIndex, isString = false, isText = false, page) {
+  if (contextIndex < this.contexts.length && textIndex < this.textArray.length && textIndex >= 0) {
+    const text = this.textArray[textIndex];
+    const describe = this.textArrayDescribe[textIndex] || '';
+    const isZh = wx.getStorageSync('language') === 'zh_CN' && isText;
+    page.setData({
+      currentText: text,
+      currentDescribe: describe,
+      textStyle: {
+        fontSize: isZh ? (isString ? 84 : 125) : (isString ? 94 : 125),
+        lineHeight: isZh ? 84 : (isString ? 97 : 125),
+        fontFamily: isZh ? 'PingFangSC-Light' : 'HelveticaNeueLTPro-Lt'
+      },
+      describeStyle: {
+        fontSize: isString ? 22 : 31.25,
+        lineHeight: isZh ? 24 : (isString ? 28 : 35),
+        fontFamily: isZh ? 'PingFangSC-Light' : 'HelveticaNeueLTPro-Lt'
+      }
+    });
+  }
+}
+
+drawGearArc(contextIndex, textIndex, isHalf = false, typeCode = null, page) {
+  if (contextIndex + 2 < this.contexts.length) {
+    let colorType = 'blue';
+    if (isHalf && textIndex > this.textArray.length / 2) colorType = 'red';
+    if (typeCode) colorType = `${typeCode}-${textIndex}`;
+    this.drawFillArc(contextIndex, colorType);
+    this.drawTextLine(contextIndex, textIndex);
+    this.drawNeedle(contextIndex + 1, colorType);
+    this.drawTargetText(contextIndex + 2, textIndex, false, false, page);
+  }
+}
+使用方式
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+Page({
+  // ... data 定义
+  onLoad() {
+    const drawArc = new DrawArc(this.data.slideItem.slideName);
+    this.data.slideItem.canvas.forEach((id, index) => drawArc.addContext(id, index + 1));
+    drawArc.initCanvasSize(() => {
+      drawArc.setTextArray(this.data.slideItem.gearArray, ['Desc1', 'Desc2', 'Desc3', 'Desc4']);
+      drawArc.drawGearArc(0, this.data.slideItem.gearIndex, false, null, this);
+    });
+    this.drawArc = drawArc;
+  }
+});
+优点
+灵活性高，调用时决定使用哪个 Page。
+不需要在类中持有 Page 引用，减少耦合。
+推荐方案
+我建议使用 方案 2（在构造函数中传入 Page），原因如下：
+
+一致性: Page 对象在类初始化时确定，后续方法调用无需额外传递。
+简洁性: 调用方法时无需每次都传入 Page，代码更简洁。
+安全性: 避免因页面栈变化导致 getCurrentPages() 获取错误页面的问题。
+如果你选择方案 2，完整 DrawArc 类只需在构造函数中添加 this.page = page，然后在需要 setData 的地方（如 drawTargetText）使用 this.page.setData。其他方法（如 drawGearArc、drawStringGearArc）也需要相应调整参数。
+
+验证示例
+以下是使用方案 2 的完整代码片段：
+
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+class DrawArc {
+  constructor(slideName, isArc = false, page) {
+    this.page = page;
+    this.contexts = [];
+    this.textArray = [];
+    this.textArrayDescribe = [];
+    this.slideName = slideName;
+    this.unit = 100;
+    this.canvasWidth = 0;
+    this.canvasHeight = 0;
+    this.angleInterval = Math.PI * 8 / 180;
+    this.arcX = 0;
+    this.arcY = 0;
+    this.arcRadius = 0;
+    this.initStartAngle = Math.PI / 2;
+    this.initEndAngle = Math.PI * 2 + Math.PI / 2;
+    this.arcAngle = Math.PI * 2;
+    this.isArc = isArc;
+
+    if (isArc) {
+      this.initStartAngle = 232 * Math.PI / 180;
+      this.initEndAngle = 308 * Math.PI / 180;
+    }
+  }
+
+  // ... 其他方法保持不变，直到需要 page 的地方
+  drawTargetText(contextIndex, textIndex, isString = false, isText = false) {
+    if (contextIndex < this.contexts.length && textIndex < this.textArray.length && textIndex >= 0) {
+      const text = this.textArray[textIndex];
+      const describe = this.textArrayDescribe[textIndex] || '';
+      const isZh = wx.getStorageSync('language') === 'zh_CN' && isText;
+      this.page.setData({
+        currentText: text,
+        currentDescribe: describe,
+        textStyle: {
+          fontSize: isZh ? (isString ? 84 : 125) : (isString ? 94 : 125),
+          lineHeight: isZh ? 84 : (isString ? 97 : 125),
+          fontFamily: isZh ? 'PingFangSC-Light' : 'HelveticaNeueLTPro-Lt'
+        },
+        describeStyle: {
+          fontSize: isString ? 22 : 31.25,
+          lineHeight: isZh ? 24 : (isString ? 28 : 35),
+          fontFamily: isZh ? 'PingFangSC-Light' : 'HelveticaNeueLTPro-Lt'
+        }
+      });
+    }
+  }
+
+  drawGearArc(contextIndex, textIndex, isHalf = false, typeCode = null) {
+    if (contextIndex + 2 < this.contexts.length) {
+      let colorType = 'blue';
+      if (isHalf && textIndex > this.textArray.length / 2) colorType = 'red';
+      if (typeCode) colorType = `${typeCode}-${textIndex}`;
+      this.drawFillArc(contextIndex, colorType);
+      this.drawTextLine(contextIndex, textIndex);
+      this.drawNeedle(contextIndex + 1, colorType);
+      this.drawTargetText(contextIndex + 2, textIndex);
+    }
+  }
+
+  // ... 其他方法
+}
+
+module.exports = { DrawArc };
+如果需要完整类的其他部分调整，请告诉我，我可以提供完整代码！
+
+
+
+
+
+
+
+这一段是什么意思：            ng-class="{'device-arc-ipad':deviceIPad, 'device-arc-isIpad': isIpad, 'colorGrey': !controlCurrent.isOpen, 'status-canvas-disabled': controlCurrent.disabled || !controlCurrent.isOpen}"
+
+
+
+
+这段代码是 AngularJS 中的 ng-class 指令，用于动态绑定 CSS 类名到 HTML 元素上。根据表达式的值（true 或 false），决定是否应用特定的类名。让我逐部分解释这段代码的含义：
+
+html
+
+Collapse
+
+Wrap
+
+Copy
+ng-class="{'device-arc-ipad': deviceIPad, 'device-arc-isIpad': isIpad, 'colorGrey': !controlCurrent.isOpen, 'status-canvas-disabled': controlCurrent.disabled || !controlCurrent.isOpen}"
+1. ng-class 简介
+ng-class 是 AngularJS 提供的一个指令，用于根据条件动态添加或移除 HTML 元素的类名。
+它的值是一个对象，对象的键是类名，值是布尔表达式。
+如果表达式为 true，对应的类名会被添加到元素上；如果为 false，则不会添加（或移除）。
+2. 代码分解
+这段 ng-class 定义了四个条件类名，分别对应不同的条件：
+
+(1) 'device-arc-ipad': deviceIPad
+类名: device-arc-ipad
+条件: deviceIPad（一个布尔值，通常是 Angular 作用域中的变量）
+含义: 如果 deviceIPad 为 true，则添加 device-arc-ipad 类。
+可能用途: 表示设备是 iPad，可能用于调整样式以适配 iPad 屏幕。
+(2) 'device-arc-isIpad': isIpad
+类名: device-arc-isIpad
+条件: isIpad（另一个布尔值）
+含义: 如果 isIpad 为 true，则添加 device-arc-isIpad 类。
+可能用途: 类似于 deviceIPad，可能是另一种检测 iPad 的方式，或者用于不同的样式调整。
+(3) 'colorGrey': !controlCurrent.isOpen
+类名: colorGrey
+条件: !controlCurrent.isOpen（controlCurrent.isOpen 取反）
+含义: 如果 controlCurrent.isOpen 为 false（即设备未开启），则添加 colorGrey 类。
+可能用途: 将元素变为灰色，表示未激活或关闭状态。
+(4) 'status-canvas-disabled': controlCurrent.disabled || !controlCurrent.isOpen
+类名: status-canvas-disabled
+条件: controlCurrent.disabled || !controlCurrent.isOpen（逻辑或运算）
+controlCurrent.disabled 为 true（禁用状态），或者
+controlCurrent.isOpen 为 false（未开启状态）
+含义: 如果设备被禁用（disabled 为 true）或未开启（isOpen 为 false），则添加 status-canvas-disabled 类。
+可能用途: 表示 canvas 或相关组件处于禁用状态，可能调整样式（如变灰或降低透明度）。
+3. 整体含义
+假设这段代码应用在一个 <div> 或其他元素上，例如：
+
+html
+
+Collapse
+
+Wrap
+
+Copy
+<div ng-class="{'device-arc-ipad': deviceIPad, 'device-arc-isIpad': isIpad, 'colorGrey': !controlCurrent.isOpen, 'status-canvas-disabled': controlCurrent.disabled || !controlCurrent.isOpen}">
+  <!-- 内容 -->
+</div>
+动态类名: 这个元素会根据 deviceIPad、isIpad、controlCurrent.isOpen 和 controlCurrent.disabled 的值，动态应用以下类名：
+device-arc-ipad（如果是 iPad 设备）
+device-arc-isIpad（另一种 iPad 检测）
+colorGrey（如果设备未开启）
+status-canvas-disabled（如果设备被禁用或未开启）
+组合效果: 类名可以叠加，例如如果 deviceIPad 为 true 且 controlCurrent.isOpen 为 false，元素会同时拥有 device-arc-ipad 和 colorGrey 类。
+4. 数据来源
+deviceIPad 和 isIpad: 通常由 Angular 控制器（$scope）中定义，可能是通过设备检测逻辑（如屏幕尺寸或用户代理）设置的布尔值。
+controlCurrent: 一个对象，可能表示当前控制的状态，包含：
+isOpen: 表示设备是否开启（布尔值）。
+disabled: 表示设备是否禁用（布尔值）。
+示例控制器代码：
+
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+angular.module('myApp', []).controller('MyCtrl', function($scope) {
+  $scope.deviceIPad = false; // 是否为 iPad
+  $scope.isIpad = true; // 另一种 iPad 检测
+  $scope.controlCurrent = {
+    isOpen: false, // 未开启
+    disabled: false // 未禁用
+  };
+});
+5. 在微信小程序中的等价实现
+微信小程序没有 ng-class，但可以用条件绑定类名，通过 wx:for 或 class 属性结合数据实现类似效果：
+
+WXML
+html
+
+Collapse
+
+Wrap
+
+Copy
+<view class="{{[
+  deviceIPad ? 'device-arc-ipad' : '',
+  isIpad ? 'device-arc-isIpad' : '',
+  !controlCurrent.isOpen ? 'colorGrey' : '',
+  (controlCurrent.disabled || !controlCurrent.isOpen) ? 'status-canvas-disabled' : ''
+].join(' ')}}">
+  <!-- 内容 -->
+</view>
+JS
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+Page({
+  data: {
+    deviceIPad: false,
+    isIpad: true,
+    controlCurrent: {
+      isOpen: false,
+      disabled: false
+    }
+  }
+});
+实现方式: 使用数组和三元运算符生成类名字符串，再用 join(' ') 合并。
+注意: 小程序中类名绑定是字符串形式，多类名用空格分隔。
+总结
+这段 ng-class 的含义是根据设备类型（iPad）和控制状态（开启/禁用）动态应用 CSS 类名，用于调整元素的样式。它的核心逻辑是条件判断，适用于响应式设计或状态显示。在小程序中，可以通过数据绑定和字符串拼接实现等价功能。
+
+
+
+
+
+
+
+微信小程序 动态插入元素，只给一个小demo就好
+
+
+
+
+在微信小程序中，动态插入元素通常通过数据绑定和条件渲染（wx:if、wx:for）实现，而不是直接操作 DOM（因为小程序没有 DOM API）。以下是一个简单的小 Demo，展示如何动态插入元素：
+
+Demo: 动态添加列表项
+WXML
+html
+
+Collapse
+
+Wrap
+
+Copy
+<!-- pages/demo/demo.wxml -->
+<view class="container">
+  <!-- 动态渲染列表 -->
+  <view wx:for="{{items}}" wx:key="index" class="item">
+    {{item.text}}
+  </view>
+
+  <!-- 添加新元素的按钮 -->
+  <button bindtap="addItem">添加新项</button>
+</view>
+WXSS
+css
+
+Collapse
+
+Wrap
+
+Copy
+/* pages/demo/demo.wxss */
+.container {
+  padding: 20rpx;
+}
+
+.item {
+  margin: 10rpx 0;
+  padding: 20rpx;
+  background-color: #f5f5f5;
+  border-radius: 10rpx;
+}
+JS
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+// pages/demo/demo.js
+Page({
+  data: {
+    items: [
+      { text: '第1项' },
+      { text: '第2项' }
+    ]
+  },
+
+  // 添加新项
+  addItem() {
+    const newItems = this.data.items.concat({ text: `第${this.data.items.length + 1}项` });
+    this.setData({
+      items: newItems
+    });
+  }
+});
+运行效果
+初始页面显示：
+text
+
+Collapse
+
+Wrap
+
+Copy
+第1项
+第2项
+[添加新项按钮]
+点击“添加新项”按钮后，列表会动态增加一项，例如：
+text
+
+Collapse
+
+Wrap
+
+Copy
+第1项
+第2项
+第3项
+[添加新项按钮]
+实现说明
+数据驱动:
+items 是一个数组，存储要渲染的元素数据。
+使用 wx:for 循环渲染数组中的每一项。
+动态更新:
+addItem 方法通过 concat 添加新数据到 items 数组。
+调用 setData 更新页面数据，触发视图重新渲染。
+条件渲染:
+如果需要根据条件显示/隐藏某元素，可以用 wx:if，例如：
+html
+
+Collapse
+
+Wrap
+
+Copy
+<view wx:if="{{items.length > 0}}">有内容</view>
+<view wx:else>无内容</view>
+扩展
+如果需要更复杂的动态插入（例如插入不同类型的元素），可以用对象数组和条件判断：
+
+WXML
+html
+
+Collapse
+
+Wrap
+
+Copy
+<view wx:for="{{elements}}" wx:key="index">
+  <text wx:if="{{item.type === 'text'}}">{{item.content}}</text>
+  <button wx:if="{{item.type === 'button'}}">{{item.content}}</button>
+</view>
+<button bindtap="addElement">添加元素</button>
+JS
+javascript
+
+Collapse
+
+Wrap
+
+Copy
+Page({
+  data: {
+    elements: [
+      { type: 'text', content: '文本1' },
+      { type: 'button', content: '按钮1' }
+    ]
+  },
+
+  addElement() {
+    const newElement = { type: this.data.elements.length % 2 === 0 ? 'text' : 'button', content: `新元素${this.data.elements.length + 1}` };
+    this.setData({
+      elements: this.data.elements.concat(newElement)
+    });
+  }
+});
+这个小 Demo 展示了小程序中最基本的动态插入方式。如果需要更具体的需求（比如插入特定位置、复杂结构），可以告诉我，我再调整！
+
+
+
+
+
+
+
+你好
+
+How can Grok help?
+
+
+DeepSearch
+
+Think
+
+Grok 3
+
